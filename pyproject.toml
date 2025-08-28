@@ -18,8 +18,8 @@ dependencies = [
     "scikit_learn>=1.2",
     "scipy>=1.10",
     "sympy>=1.12",
+    "pysindy>=1.7",
     "tensorflow>=2.18",
-    "tensorflow_probability>=0.25",
     "tensorflow_model_optimization>=0.8",
     "tf-keras>=2.18",
 ]
