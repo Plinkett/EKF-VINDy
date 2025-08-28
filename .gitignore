@@ -97,7 +97,8 @@ StyleCopReport.xml
 *.pgc
 *.pgd
 *.rsp
-
+*.lock
+*.lock
 # poetry stuff
 .lock
 
