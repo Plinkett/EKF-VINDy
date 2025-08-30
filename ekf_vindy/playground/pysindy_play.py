@@ -39,25 +39,59 @@ model.print()
 
 coeffs = model.coefficients()
 
-# automate the symbolic extraction of learned equations
+#################### automate the symbolic extraction of learned equations
 
 # in general, define symbols
 x0, x1 = sp.symbols('x0 x1')    
 
-# get the feature names from the model
+################à# get the feature names from the model
 sindy_library_names = model.get_feature_names()
+var_names = model.feature_names
 
+print(f'var_names: {var_names}')
+var_str = " ".join(var_names)
+output = sp.symbols(var_str)
+print(type(output[0]))
+
+
+
+
+print(".--------")
 # what is sindy_library_names? they are strings
-print("Feature names:", type(sindy_library_names[0]))
+#print("Feature names:", type(sindy_library_names[0]))
 
+
+############## sympify everything
 terms = []
 for term in sindy_library_names:
     # Replace '^' with '**' for exponentiation in SymPy and remove any spaces
-    term = term.replace('^', '**').replace(' ', '*')
+    # this may need to be modified for other weird symbols you may need
+    term = term.replace('^', '**').replace(' ', '*') # term is still a string
     try:
-        terms.append(eval(term, {'u1': x0, 'u2': x1}))
+        terms.append(sp.sympify(term, locals={'x0': x0, 'x1': x1}))
     except SyntaxError as e:
         print(f"Error parsing term '{term}': {e}")
+
+print(f'LEN(VARIABLES): {len(var_names)}')
+print(f'LEN(LIBRARY): {len(terms)}')
+#mmm these are sympy types... is this the output of eval? a sympy thingy? except for scalars, which are ints and whatnot
+#print(type(terms[0]))
+
+############# Now we have sympy terms, get lambda functions out of them
+
+# takes sympy symbols x0 and x1, which will be matched with the sympy symbol-format version of 
+# our functions
+sindy_library = [sp.lambdify((x0, x1), expr) for expr in terms]
+# for term in terms:
+#     print(term)
+
+############ Now do the same with the derivatives for the Jacobian
+
+# first see the output of sp.diff given an expression (sympy symbol) and the var (x0, also symbol)
+diff=sp.diff(terms[7], x0) # this is a sympy symbol, which can be lambdified 
+sindy_library_dx0 = [sp.lambdify((x0, x1), sp.diff(expr, x0)) for expr in terms]
+for expr in terms:
+    print(sp.diff(expr, x0))
 
 # I don't know what "term" type is
 # but yeah this can be automated and simpler
