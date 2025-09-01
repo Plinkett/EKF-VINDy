@@ -1,5 +1,7 @@
 """ 
-Base classes for the augmented state, as described in the EKF-SINDy paper by Rosafalco et al. (2024)
+Base classes for the augmented state, as described in the "Online learning in bifurcating dynamic systems via SINDy
+and Kalman filtering" paper
+
 TODO: Structure of weights phi is missing, currently assumed to be handled flattened. Correct this.
 TODO: Take into account the boolean map B, as shown in the paper.
 """
@@ -14,27 +16,26 @@ class State:
     ----------
     x : np.ndarray
         Actual vector in R^n representing the state of the original dynamical system, either in latent space (with VAE) or the original one.
-    phi : np.ndarray
+    xi : np.ndarray
         Vector of coefficients, obtained with VINDy or SINDy, that we are tracking. 
-        Also called \xi in the "Online learning in bifurcating dynamic systems via SINDy and Kalman filtering" paper.
     cov: np.ndarray
         Covariance matrix of x and phi. I can't recall exactly right now, but I think it has a block structure, in that case it would be better
         to save the 2 blocks separately. 
     """
-    def __init__(self, x: np.ndarray, phi: np.ndarray, cov: np.ndarray):
+    def __init__(self, x: np.ndarray, xi: np.ndarray, cov: np.ndarray):
         self.x = x
-        self.phi = phi
+        self.xi = xi
         self.cov = cov
         self.dim_x = x.size
-        self.dim_phi = phi.size # assumed to be flattened dimension, in principle this is a matrix
+        self.dim_xi = xi.size # assumed to be flattened dimension, in principle this is a matrix
 
     @property
     def x(self) -> np.ndarray:
         return self.x
     
     @property 
-    def phi(self) -> np.ndarray:
-        return self.phi
+    def xi(self) -> np.ndarray:
+        return self.xi
     
     @property
     def cov(self) -> np.ndarray:
@@ -45,8 +46,8 @@ class State:
         return self.dim_x
     
     @property
-    def dim_phi(self) -> int:
-        return self.dim_phi
+    def dim_xi(self) -> int:
+        return self.dim_xi
     
 class StateHistory:
     """ 
@@ -83,14 +84,14 @@ class StateHistory:
         return np.stack(state.x.squeeze() for state in self._states)
 
     @property 
-    def phi_states(self) -> np.ndarray:
+    def xi_states(self) -> np.ndarray:
         """ 
         History of coefficient evolution, however they should be in the matrix structure... to correct later.
         Currently assume it is flattened.
         """
         self._assert_not_empty()
         # assume it is flattened...
-        return np.stack(state.phi.squeeze() for state in self._states)
+        return np.stack(state.xi.squeeze() for state in self._states)
 
     @property
     def length(self):

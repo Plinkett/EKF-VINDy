@@ -8,7 +8,7 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 from ekf_vindy.jacobian_utils import sympify_str, differentiate_library, lambdify_library
 np.random.seed(1000)  # Seed for reproducibility
-
+import ekf_vindy.utils as utils
 # Integrator keywords for solve_ivp
 integrator_keywords = {}
 integrator_keywords['rtol'] = 1e-12
@@ -39,7 +39,11 @@ model.fit(x_train, t=dt)
 model.print()
 
 coeffs = model.coefficients()
+print(f'coeffs: {coeffs}')
+print(f'type(coeffs): {type(coeffs)}')
+non_zero = utils.find_non_zero(coeffs)
 
+print(f'non_zero: {non_zero}')
 #################### automate the symbolic extraction of learned equations
 
 
@@ -50,10 +54,12 @@ x0, x1 = sp.symbols('x0 x1')
 sindy_library_names = model.get_feature_names()
 var_names = model.feature_names
 
-var_symbols, feature_symbols = sympify_str(var_names, sindy_library_names)
-derivatives, sym_derivatives = differentiate_library(var_symbols, feature_symbols)
+var_symbols, library_symbols = sympify_str(var_names, sindy_library_names)
+derivatives, sym_derivatives = differentiate_library(var_symbols, library_symbols)
 
-print(coeffs.shape)
+print(f'var_symbols: {var_symbols}')
+print(f'library_symbols: {library_symbols}')
+print(f'derivatives: {sym_derivatives}')
 
 """  
 How to track the coefficients? 
