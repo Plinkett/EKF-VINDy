@@ -57,9 +57,9 @@ var_names = model.feature_names
 var_symbols, library_symbols = sympify_str(var_names, sindy_library_names)
 derivatives, sym_derivatives = differentiate_library(var_symbols, library_symbols)
 
-print(f'var_symbols: {var_symbols}')
+#print(f'var_symbols: {var_symbols}')
 print(f'library_symbols: {library_symbols}')
-print(f'derivatives: {sym_derivatives}')
+# print(f'derivatives: {sym_derivatives}')
 
 """  
 How to track the coefficients? 
