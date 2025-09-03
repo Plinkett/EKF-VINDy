@@ -5,7 +5,7 @@
 import numpy as np
 from typing import List, Callable
 from state import State, StateHistory
-from jacobian_utils import lambdified_jacobian_blocks
+from jacobian_utils import lambdified_jacobian_blocks, lambdify_library
 
 class EKF:
 
@@ -27,15 +27,28 @@ class EKF:
     def jacobian_f(self, state: State, 
                 big_xi_t: np.ndarray):
         """ Note, what I call "big_xi_t" is Xi transpose, so an (n x p) matrix """
+        """ Also, yes, this can be greatly optimized if using sparse matrices and/or vectorized operations """
         # compute \Theta_t
         big_theta_t = np.zeros((self.n, self.p))
-        for i, (row_lambdas, row_indices) in enumerate(zip(self.lambdified_derivatives, self.tracked_terms)):
-            for lam, col in zip(row_lambdas, row_indices):
-                big_theta_t[i, col] = lam(state.x[i])  # or lam(x) if lambda expects full x
+
+        # for sparse systems, must fix tracked terms, they identify COLUMNS, equation-wise if it's not active 
+        # and not tracked then you drop it... not like you are doing now.
+
+        # for i, (row_lambdas, row_indices) in enumerate(zip(self.lambdified_derivatives, self.tracked_terms)):
+        #     for lam, j in zip(row_lambdas, row_indices):
+        #         big_theta_t[i, j] = lam(state.x[i])  
         
+        # fill partial derivative matrix
+        
+        # matrix of coefficients (found by SINDy) times partial derivative matrix
         left_upper_block = big_xi_t @ big_theta_t
         right_upper_block = np.zeros((self.n, len(self.tracked_terms)))
-        ### the right upper block fuuuuuuuuck right this as a tensor product or sth...
-        # very inefficient... but it should do for our easy enough systems...
+
+        # Fill right upper block with entries, this is essentially a tensor product
+        for i, row in enumerate(self.tracked_terms):
+                for j, col in enumerate(row):
+                    right_upper_block[i, j] = self.right_block_lambdas[col](state)
+
+
 
         return None
