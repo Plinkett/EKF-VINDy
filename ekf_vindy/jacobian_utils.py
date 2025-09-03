@@ -1,15 +1,6 @@
 """ 
 Utils for converting strings (usually obtain from PySINDy library) into SymPy symbols for 
 symbolic differentiation, and easy Jacobian computation for EKF. 
-
-For this project we will rely on dense matrices, sparse matrix optimization from scipy.sparse
-can be taken into consideration if we actually deal with high-dimensional systems and huge libraries... since for this project
-we work on a small latent space it's ok. For example, big_xi_t would be a csr_matrix in an efficient implementation.
-
-In such a scenario, you would use something like this to identify the indices of entries:
-
-rows = [i for i, col_list in enumerate(to_lambdify) for _ in col_list]
-cols = [c for col_list in to_lambdify for c in col_list]
 """
 
 from typing import List, Optional
@@ -38,26 +29,30 @@ def sympify_str(variables: List[str], library_terms: List[str]):
     return var_symbols, library_symbols
 
 def differentiate_library(variables: List[sp.Symbol], 
-                          library: List[sp.Symbol], 
-                          to_lambdify: Optional[List[List[int]]] = None):
-    """  
-    Returns a list of partial derivatives, lamdbified and in symbolic format.
-    Differentiates each library term w.r.t. each variable. 
-    to_lamdbify says which partial derivatives to compute per row (outer list is for the N equations, inner for the p paramters)
+                          library: List[sp.Expr], 
+                          to_lambdify: Optional[List[int]] = None):
     """
-    symbolic_derivatives = []
-    lambdified_derivatives = []
+    Returns lambdified and symbolic partial derivatives.
 
-    # Not the best since you effectevily iterate over twice. Easy to read though, and we are dealing with 
-    # a small number of items anyway
-    if not to_lambdify:
-        symbolic_derivatives = [[sp.diff(term, var) for term in library] for var in variables]
-        lambdified_derivatives = [[sp.lambdify(variables, dterm) for dterm in sym_row] for sym_row in symbolic_derivatives]
-    else:
-        symbolic_derivatives = [[sp.diff(term, var) for term in partial] for var, partial in zip(variables, to_lambdify)]
-        lambdified_derivatives = [[sp.lambdify(variables, dterm) for dterm in sym_row] for sym_row in symbolic_derivatives]
+    - If `to_lambdify` is None: full Jacobian (all variables x all library terms).
+    - If `to_lambdify` is a list of indices: Jacobian restricted to those terms.
+    """
 
-    # list of lists
+    # Select terms to differentiate
+    terms = library if to_lambdify is None else [library[i] for i in to_lambdify]
+
+    # Symbolic Jacobian (list of lists)
+    symbolic_derivatives = [
+        [sp.diff(term, var) for term in terms]
+        for var in variables
+    ]
+
+    # Lambdified Jacobian
+    lambdified_derivatives = [
+        [sp.lambdify(variables, dterm) for dterm in row]
+        for row in symbolic_derivatives
+    ]
+
     return lambdified_derivatives, symbolic_derivatives
 
 def lambdify_library(variables: List[sp.Symbol], 
@@ -75,22 +70,24 @@ def lambdified_jacobian_blocks(variables: List[str],
                                coeffs: np.ndarray):
     """ 
     We compute the Jacobian in blocks. The upper right block is the Jacobian w.r.t. the original state x. The left upper block is the Jacobian w.r.t. the coefficients xi.
-    tracked_terms defines a list, one per equation of the ODE system, of indices of coefficients to track. We return lamdbdified versions of those blocks.
+    tracked_terms defines a list of terms who may evolve. 
+
+    We only consider, for all computations, the library terms that are either active in at least on equation (non-zero) or the ones corresponding to tracked terms (
+    column-wise)
     """
 
-    # Gotta do this for terms that are not activated across equations, for the moment just ignore this and brute-force it to see if it works
-    # # Compute only derivatives for the non-zero coefficients or the tracked coefficients.
-    # non_zero_coeffs = utils.find_non_zero(coeffs)
-    # # list of indices for which to evaluate the partial derivative i.e., the non-zero coefficients and the tracked terms 
-    # to_lambdify = [sorted(list(set(nz).union(set(tr)))) for nz, tr in zip(non_zero_coeffs, tracked_terms)]
-    
+    # Find all columns (library terms) that are active at least once, and the columnns corresponding to tracked terms.
+    non_zero_coeffs = utils.find_non_zero(coeffs)
+    tracked_columns = {col for row in tracked_terms for col in row}
+    to_lambdify = sorted(set(non_zero_coeffs) | tracked_columns)
+
     # turn into symbols (we're turning the entire library into symbols, could create issues?)
     var_symbols, library_symbols = sympify_str(variables, library_terms)
     
-    # we differentiate only the selected entries of the matrix, this is essentially dTheta/dt
-    _, lambdified_derivatives = differentiate_library(var_symbols, library_symbols) # , to_lambdify)
+    # we differentiate only the selected entries of the matrix, this is essentially dTheta/dt (a block)
+    lambdified_derivatives, symbolic_derivatives = differentiate_library(var_symbols, library_symbols, to_lambdify)
 
     # now we create the upper right block, we lambdified the entire library and select the necessary entries at runtime (from tracked_terms)
-    right_block_lambdas = lambdify_library(var_symbols, library_symbols)
+    lambdified_library = lambdify_library(var_symbols, library_symbols)
 
-    return lambdified_derivatives, right_block_lambdas
+    return lambdified_derivatives, lambdified_library, to_lambdify, symbolic_derivatives
