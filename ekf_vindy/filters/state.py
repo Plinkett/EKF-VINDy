@@ -2,8 +2,8 @@
 Base classes for the augmented state, as described in the "Online learning in bifurcating dynamic systems via SINDy
 and Kalman filtering" paper
 
-TODO: Structure of weights phi is missing, currently assumed to be handled flattened. Correct this.
-TODO: Take into account the boolean map B, as shown in the paper.
+TODO: Structure of weights phi is missing, currently assumed to be handled flattened. Correct this. Will handle in EKF.
+TODO: Take into account the boolean map B, as shown in the paper. Not necessary, all handled internally here.
 """
 import numpy as np
 

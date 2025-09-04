@@ -41,7 +41,7 @@ model.print()
 coeffs = model.coefficients()
 print(f'coeffs: {coeffs}')
 print(f'type(coeffs): {type(coeffs)}')
-non_zero = utils.find_non_zero(coeffs)
+non_zero = utils.non_zero_columns(coeffs)
 
 print(f'non_zero: {non_zero}')
 #################### automate the symbolic extraction of learned equations

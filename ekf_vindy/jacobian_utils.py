@@ -62,7 +62,7 @@ def lambdify_library(variables: List[sp.Symbol],
     # wrap so each f takes a single array-like x
     # may NOT work if library terms have unordered variables (apparently an issue for PDE libraries)
     wrapped_funcs = [lambda x, f=f: f(*x) for f in funcs]
-    return wrapped_funcs
+    return wrapped_funcs, 
 
 def lambdified_jacobian_blocks(variables: List[str], 
                                library_terms: List[str],
@@ -77,9 +77,9 @@ def lambdified_jacobian_blocks(variables: List[str],
     """
 
     # Find all columns (library terms) that are active at least once, and the columnns corresponding to tracked terms.
-    non_zero_coeffs = utils.find_non_zero(coeffs)
+    non_zero_coeffs = utils.non_zero_columns(coeffs)
     tracked_columns = {col for row in tracked_terms for col in row}
-    to_lambdify = sorted(set(non_zero_coeffs) | tracked_columns)
+    to_lambdify = sorted(set(non_zero_coeffs) | tracked_columns) # terms of interest, indices w.r.t. the entire library
 
     # turn into symbols (we're turning the entire library into symbols, could create issues?)
     var_symbols, library_symbols = sympify_str(variables, library_terms)
@@ -90,4 +90,4 @@ def lambdified_jacobian_blocks(variables: List[str],
     # now we create the upper right block, we lambdified the entire library and select the necessary entries at runtime (from tracked_terms)
     lambdified_library = lambdify_library(var_symbols, library_symbols)
 
-    return lambdified_derivatives, lambdified_library, to_lambdify, symbolic_derivatives
+    return lambdified_derivatives, lambdified_library, library_symbols, to_lambdify, symbolic_derivatives
