@@ -19,10 +19,10 @@ def sympify_str(variables: List[str], library_terms: List[str]):
     library_symbols = []
     var_symbols = sp.symbols(' '.join(variables))
     
-    #annoying handling of symbols and their corresponding string names
+    # annoying handling of symbols and their corresponding string names
     locals_dict = {name: symbol for name, symbol in zip(variables, var_symbols)} 
     
-    # By default, SINDy uses other symbols for exponentiation and multiplication
+    # by default, SINDy uses other symbols for exponentiation and multiplication
     library_terms = [term.replace('^', '**').replace(' ', '*') for term in library_terms]
     library_symbols = [sp.sympify(term, locals=locals_dict) for term in library_terms]
 
@@ -35,21 +35,21 @@ def differentiate_library(variables: List[sp.Symbol],
     Returns lambdified and symbolic partial derivatives.
 
     - If `to_lambdify` is None: full Jacobian (all variables x all library terms).
-    - If `to_lambdify` is a list of indices: Jacobian restricted to those terms.
+    - If `to_lambdify` is a list of indices: Jacobian restricted to those terms, still rectangular obviously.
     """
 
-    # Select terms to differentiate
+    # select terms to differentiate
     terms = library if to_lambdify is None else [library[i] for i in to_lambdify]
 
-    # Symbolic Jacobian (list of lists)
+    # symbolic Jacobian (list of lists)
     symbolic_derivatives = [
         [sp.diff(term, var) for term in terms]
         for var in variables
     ]
 
-    # Lambdified Jacobian
+    # lambdified Jacobian (list of lists)
     lambdified_derivatives = [
-        [sp.lambdify(variables, dterm) for dterm in row]
+        [sp.lambdify([variables], dterm) for dterm in row]
         for row in symbolic_derivatives
     ]
 
@@ -57,12 +57,9 @@ def differentiate_library(variables: List[sp.Symbol],
 
 def lambdify_library(variables: List[sp.Symbol], 
                      library: List[sp.Symbol]):
-    """Return lambdified library functions that take a state vector x"""
-    funcs = [sp.lambdify(variables, term, "numpy") for term in library]
-    # wrap so each f takes a single array-like x
-    # may NOT work if library terms have unordered variables (apparently an issue for PDE libraries)
-    wrapped_funcs = [lambda x, f=f: f(*x) for f in funcs]
-    return wrapped_funcs, 
+    """Return lambdified library functions that take a state vector x, because of wrapping "variables" in []"""
+    funcs = [sp.lambdify([variables], term, "numpy") for term in library]
+    return funcs
 
 def lambdified_jacobian_blocks(variables: List[str], 
                                library_terms: List[str],
@@ -70,10 +67,9 @@ def lambdified_jacobian_blocks(variables: List[str],
                                coeffs: np.ndarray):
     """ 
     We compute the Jacobian in blocks. The upper right block is the Jacobian w.r.t. the original state x. The left upper block is the Jacobian w.r.t. the coefficients xi.
-    tracked_terms defines a list of terms who may evolve. 
+    tracked_terms defines a list of list of terms who may evolve. 
 
-    We only consider, for all computations, the library terms that are either active in at least on equation (non-zero) or the ones corresponding to tracked terms (
-    column-wise)
+    We only consider, for all computations, the library terms that are either active in at least on equation (non-zero) or the ones corresponding to tracked terms (column-wise)
     """
 
     # Find all columns (library terms) that are active at least once, and the columnns corresponding to tracked terms.
