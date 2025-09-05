@@ -3,7 +3,7 @@ Base classes for the augmented state, as described in the "Online learning in bi
 and Kalman filtering" paper
 
 TODO: Structure of weights phi is missing, currently assumed to be handled flattened. Correct this. Will handle in EKF.
-TODO: Take into account the boolean map B, as shown in the paper. Not necessary, all handled internally here.
+TODO: It would also be better to work with the square root of the covariance... would change the math inside ekf.py
 """
 import numpy as np
 
@@ -14,6 +14,8 @@ class State:
 
     Attributes
     ----------
+    t : float
+        Time instant to which this state refers.
     x : np.ndarray
         Actual vector in R^n representing the state of the original dynamical system, either in latent space (with VAE) or the original one.
     xi : np.ndarray
@@ -22,38 +24,43 @@ class State:
         Covariance matrix of x and phi. I can't recall exactly right now, but I think it has a block structure, in that case it would be better
         to save the 2 blocks separately. 
     """
-    def __init__(self, x: np.ndarray, xi: np.ndarray, cov: np.ndarray):
-        self.x = x
-        self.xi = xi
-        self.cov = cov
-        self.dim_x = x.size
-        self.dim_xi = xi.size # assumed to be flattened dimension, in principle this is a matrix
+    def __init__(self, t: float, x: np.ndarray, xi: np.ndarray, cov: np.ndarray):
+        self._t = t
+        self._x = x.reshape(-1, 1)
+        self._xi = xi.reshape(-1, 1)
+        self._cov = cov.squeeze()
 
     @property
     def x(self) -> np.ndarray:
-        return self.x
+        return self._x
     
     @property 
     def xi(self) -> np.ndarray:
-        return self.xi
+        return self._xi
+    
+    @property
+    def x_cal(self) -> np.ndarray:
+        """
+        This is the "caligraphic x" from the paper i.e., the augmented state. Useful in the updated step.
+        """
+        return np.vstack([self._x, self._xi])
+
+    @property
+    def t(self) -> float:
+        return self._t
     
     @property
     def cov(self) -> np.ndarray:
-        return self.cov
+        """
+        Note that, in general, the entire covariance matrix P will be dense, despite the fact that initially we can have a diagonal covariance.
+        """
+        return self._cov
     
-    @property
-    def dim_x(self) -> int:
-        return self.dim_x
-    
-    @property
-    def dim_xi(self) -> int:
-        return self.dim_xi
-    
+
 class StateHistory:
     """ 
     Utility class to store the history of states, for easy fetching.
     """
-
     def __init__(self):
         """
         Initialize the state history.
@@ -61,17 +68,8 @@ class StateHistory:
         self._states = []
 
     def append(self, state: State):
-        """
-        Append a state to the history.
-
-        Parameters
-        ----------
-        state
-            The state to be appended.
-        """
         if state is None:
-            raise ValueError("State cannot be None.")
-        
+            raise ValueError("State cannot be None.")        
         self._states.append(state)
 
     @property
@@ -80,8 +78,8 @@ class StateHistory:
         The states of the dynamical system, without coefficients, in an array.
         """
         self._assert_not_empty()
-        # Squeeze to get output of shape (n, d) instead of (n, d, 1), assuming x is of shape (n,)
-        return np.stack(state.x.squeeze() for state in self._states)
+        # Squeeze to get output of shape (T, n) instead of (T, n. Where T are the time instances.
+        return np.stack([state.x.squeeze() for state in self._states])
 
     @property 
     def xi_states(self) -> np.ndarray:
@@ -90,8 +88,7 @@ class StateHistory:
         Currently assume it is flattened.
         """
         self._assert_not_empty()
-        # assume it is flattened...
-        return np.stack(state.xi.squeeze() for state in self._states)
+        return np.stack([state.xi.squeeze() for state in self._states])
 
     @property
     def length(self):
