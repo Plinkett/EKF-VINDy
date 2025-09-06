@@ -1,9 +1,10 @@
 # TODO: Make implementation more stable. Use Cholesky, square root, QR and some other stuff (?)
 # TODO: Many things can be vectorized... but they compromise readability (and as a consequence ease of debugging)
-# TODO: Reshape at the beginning so you can keep everything consistent.
+# TODO: Maybe use a configuration class (@dataclass or something)
+# TODO: Once you verify it works make things private
 
 import numpy as np
-from typing import List, Callable
+from typing import List, Callable, Iterable
 from state import State, StateHistory
 from jacobian_utils import lambdified_jacobian_blocks
 
@@ -44,6 +45,8 @@ class EKF:
         Observation model, here we just select the original state from the augmented one. In the future, we can consider non-trivial observation models (which also need to be linearized).
     I : np.ndarray
         Identity matrix of size (self.n + self.n_tracked_terms), just as a utility for the update step.
+    integration_rule : str
+        What integration rule to use during the prediction step, either Euler or RK4 step.
     """
     def __init__(self, 
                  initial_state: State,
@@ -52,12 +55,13 @@ class EKF:
                  variables: List[str], 
                  library_terms: List[str], 
                  tracked_terms: List[List[int]], 
-                 coeffs: np.ndarray):
+                 initial_coeffs: np.ndarray,
+                 integration_rule = 'Euler'):
         
-        self.states = StateHistory()
-
+        self._states = StateHistory()
+        
         # save initial state i.e. x_0 
-        self.states.append(initial_state)
+        self._states.append(initial_state)
         self.Q = Q
         self.R = R
         self.n = len(variables) 
@@ -67,14 +71,14 @@ class EKF:
         self.lambdified_library, \
         self.library_symbols, \
         self.terms_of_interest, \
-        self.symbolic_derivatives = lambdified_jacobian_blocks(variables, library_terms, tracked_terms, coeffs)
+        self.symbolic_derivatives = lambdified_jacobian_blocks(variables, library_terms, tracked_terms, initial_coeffs)
         
         """ 
         tracked_terms with new indices, after compressing sparse system e.g. tracked = [[2, 3], [3, 5]] with to_lambdify = [1, 2, 3, 5](active terms) will become tracked = [[1, 2], [2, 3]],
         if it was to_lambdify = [2, 3, 5] it would be tracked = [[0, 1], [1, 2]], and we select only the library terms we care about. 
         """
         self.tracked_terms = [[{col: i for i, col in enumerate(self.terms_of_interest)}[col] for col in row] for row in tracked_terms]
-        self.coeffs = coeffs[:, self.terms_of_interest] # compress the coeffs matrix to only the terms of interest
+        self.coeffs = initial_coeffs[:, self.terms_of_interest] # compress the coeffs matrix to only the terms of interest
 
         """ 
         we have a vector of the lambdified library terms "of interest", indices therefore correspond to compressed system
@@ -86,6 +90,7 @@ class EKF:
         self.p = len(self.terms_of_interest) + self.n_tracked_terms
         self.H = np.eye(self.n, self.n + self.n_tracked_terms)
         self.I = np.eye(self.n + self.n_tracked_terms)
+        self.integration_rule = integration_rule
         
     def _evaluate_f(self, x: np.ndarray):
         """ 
@@ -95,9 +100,9 @@ class EKF:
         theta_xt = np.array([f(x) for f in self.lambdified_library])
         return theta_xt
     
-    def _prediction(self, state: State, dt: float):
-        """ Predict state and covariance through numerical integration """
-        x_pred = self._integration_step(state.x, self._evaluate_f, dt).reshape(-1, 1)
+    def _predict(self, state: State, dt: float):
+        """ Predict state (non-augmented, so no xi_tilde) and covariance (for augmented state) through numerical integration """
+        x_pred = self._integration_step(state.x, self._evaluate_f, dt, self.integration_rule).reshape(-1, 1)
         
         # Jacobian computed at predicted mean
         jacobian = self._jacobian_f(x_pred, state.xi)
@@ -112,22 +117,53 @@ class EKF:
     def _update(self, x_pred: np.ndarray, p_pred: np.ndarray, xi: np.ndarray, observation: np.ndarray):
         """
         Compute updated estimate of state and covariance. For the moment, we consider a trivial observation model that selects a few state components.
+        xi is just a vectorized version (size n_tracked_terms x 1) of the tracked_terms
         """
         
         # Kalman gain (USE CHOLESKY)
         g = p_pred @ self.H.T @ np.linalg.inv(self.H @ p_pred @ self.H.T + self.R)
-        innovation = observation.reshape(-1, 1) - x_pred
+        innovation = observation - x_pred 
 
         # predicted augmented state (caligraphic x in the paper)
         cal_x_pred = np.vstack([x_pred, xi])
 
         # updated state and covariance (with Joseph update, look it up)
-        cal_x_updated = cal_x_pred + g @ innovation
-        p_updated = (self.I - g @ self.H) @ p_pred @ (self.I - g @ self.H).T + g @ self.R @ g.T
+        cal_x_updt = cal_x_pred + g @ innovation
+        p_updt = (self.I - g @ self.H) @ p_pred @ (self.I - g @ self.H).T + g @ self.R @ g.T
+        x_updt, xi_updt = cal_x_updt[:self.n], cal_x_updt[-self.n_tracked_terms:]
+        
+        return x_updt, xi_updt, p_updt
 
-        return cal_x_updated, p_updated
+    def _step(self, curr_state: State, dt: float, observation: np.ndarray):
+        """ Stitch prediction and update steps"""
+        x_pred, p_pred = self._predict(curr_state, dt)
+        x_updt, xi_updt, p_updt = self._update(x_pred, p_pred, curr_state.xi, observation)
+        state_upd = State(curr_state.t + dt, x_updt, xi_updt, p_updt)
+        
+        return state_upd
+    
+    def filter(self, dts: Iterable[np.ndarray], observations: Iterable[np.ndarray], online = False):
+        """ 
+        Main call to this class. We assume dt and observations to be of the same length.
+        We take either the whole vector of (dt, observations) or do it in an online fashion with yield
+        """
+        
+        for dt, observation in zip(dts, observations):
+            previous_state = self._states.last
+            state_upd = self._step(previous_state, dt, observation.reshape(-1, 1))
+            self._states.append(state_upd)
+            
+            # in case you are actually receiving observations in an online fashion (e.g., from a sensor)
+            if online: 
+                yield
 
-    def _integration_step(self, y: np.ndarray, f: Callable, dt: float, method='EF'):
+        return
+    
+    @property
+    def states(self):
+        return self._states
+    
+    def _integration_step(self, y: np.ndarray, f: Callable, dt: float, method='Euler'):
         """
         A simple integration step (RK4 or Euler). We assuming an autonomous ODE i.e., no explicit time-dependence.
         This is for either evolving the state and/or solving the Lyapunov equation to obtain the predicted covariance.
@@ -143,7 +179,8 @@ class EKF:
             y_k3 = f(y + dt/2 * y_k2)
             y_k4 = f(y + dt * y_k3)
             y_new = y + dt/6 * (y_k1 + 2 * y_k2 + 2 * y_k3 + y_k4)
-
+        else:
+            raise ValueError("Integration method not supported: " + str(method))
         return y_new
     
     def _big_xi_t(self, tracked_xi: np.ndarray):
