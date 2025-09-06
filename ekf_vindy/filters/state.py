@@ -2,8 +2,7 @@
 Base classes for the augmented state, as described in the "Online learning in bifurcating dynamic systems via SINDy
 and Kalman filtering" paper
 
-TODO: Structure of weights phi is missing, currently assumed to be handled flattened. Correct this. Will handle in EKF.
-TODO: It would also be better to work with the square root of the covariance... would change the math inside ekf.py
+TODO: It would also be better to work with the square root of the covariance... would change the math inside ekf.py and how we store the covariance.
 """
 import numpy as np
 

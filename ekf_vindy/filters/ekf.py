@@ -2,11 +2,12 @@
 # TODO: Many things can be vectorized... but they compromise readability (and as a consequence ease of debugging)
 # TODO: Maybe use a configuration class (@dataclass or something)
 # TODO: Once you verify it works make things private
+# TODO: Check that the right upper block is correct!!!
 
 import numpy as np
 from typing import List, Callable, Iterable
-from state import State, StateHistory
-from jacobian_utils import lambdified_jacobian_blocks
+from ekf_vindy.filters.state import State, StateHistory
+from ekf_vindy.jacobian_utils import lambdified_jacobian_blocks
 
 class EKF:
     """
@@ -142,12 +143,11 @@ class EKF:
         
         return state_upd
     
-    def filter(self, dts: Iterable[np.ndarray], observations: Iterable[np.ndarray], online = False):
+    def run_filter(self, dts: Iterable[np.ndarray], observations: Iterable[np.ndarray], online = False):
         """ 
         Main call to this class. We assume dt and observations to be of the same length.
         We take either the whole vector of (dt, observations) or do it in an online fashion with yield
         """
-        
         for dt, observation in zip(dts, observations):
             previous_state = self._states.last
             state_upd = self._step(previous_state, dt, observation.reshape(-1, 1))
@@ -155,8 +155,7 @@ class EKF:
             
             # in case you are actually receiving observations in an online fashion (e.g., from a sensor)
             if online: 
-                yield
-
+                yield state_upd
         return
     
     @property
@@ -165,11 +164,10 @@ class EKF:
     
     def _integration_step(self, y: np.ndarray, f: Callable, dt: float, method='Euler'):
         """
-        A simple integration step (RK4 or Euler). We assuming an autonomous ODE i.e., no explicit time-dependence.
+        A simple integration step (Euler or RK4). We assume an autonomous ODE i.e., no explicit time-dependence.
         This is for either evolving the state and/or solving the Lyapunov equation to obtain the predicted covariance.
         It is worth noting that we are assuming our linearization (through the Jacobian) holds for the intermediate steps of the RK4. 
-        Ideally, you would compute the Jacobian at the intermediate states as well. However, this is equivalent to \Phi * P *\ Phi + Q,
-        so we can potentially put that in place of the integration step, for the covariance.
+        Ideally, you would compute the Jacobian at the intermediate states as well.
         """
         if method in ('Euler', 'FE', 'EF'):
             y_new = y + dt * f(y)
@@ -220,7 +218,7 @@ class EKF:
 
         # pad with zeroes
         jacobian_top = np.hstack([left_upper_block, right_upper_block])
-        jacobian = np.vstack([jacobian_top, np.zeros((self.p, self.n + self.n_tracked_terms))])
+        jacobian = np.vstack([jacobian_top, np.zeros((self.n_tracked_terms, self.n + self.n_tracked_terms))])
 
         return jacobian
 
