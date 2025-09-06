@@ -100,7 +100,7 @@ class StateHistory:
     @property
     def last(self) -> State:
         """
-        The last state of the history.
+        The last state of the history (i.e., the previous state, if you are filtering)
         """
         self._assert_not_empty()
         return self._states[-1] if self._states else None
