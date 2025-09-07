@@ -27,7 +27,7 @@ x_train = solve_ivp(linear_damped_SHO, t_train_span,
 # Fit the model, in our case we will use VINDy, but the library will come from
 # PySINDy because it's useful. 
 
-poly_order = 5
+poly_order = 3
 threshold = 0.05
 
 model = ps.SINDy(
@@ -54,13 +54,14 @@ x0, x1 = sp.symbols('x0 x1')
 sindy_library_names = model.get_feature_names()
 var_names = model.feature_names
 
-var_symbols, library_symbols = sympify_str(var_names, sindy_library_names)
-derivatives, sym_derivatives = differentiate_library(var_symbols, library_symbols)
+print(f'sindy_library_names: {sindy_library_names}')
+# var_symbols, library_symbols = sympify_str(var_names, sindy_library_names)
+# derivatives, sym_derivatives = differentiate_library(var_symbols, library_symbols)
 
-#print(f'var_symbols: {var_symbols}')
-print(f'var_symbols: {var_symbols}')
-print(f'library_symbols: {library_symbols}')
-print(f'derivatives: {sym_derivatives}')
+# #print(f'var_symbols: {var_symbols}')
+# print(f'var_symbols: {var_symbols}')
+# print(f'library_symbols: {library_symbols}')
+# print(f'derivatives: {sym_derivatives}')
 
 """  
 How to track the coefficients? 

@@ -64,7 +64,7 @@ def plot_trajectory(x: np.ndarray, time_instants: np.ndarray,  state_names: List
     ax.grid(True, which='both', linestyle='-', linewidth=0.5, color='gray', alpha=0.5)
     ax.set_axisbelow(True)
 
-    # add legend, but if dimensions > 5 we don't show it.
+    # add legend, but if dimensions > 6 we don't show it.
     if state_dimension <= 6:
         ax.legend(frameon=True, fontsize=legend_fontsize, framealpha=1.0, 
                   edgecolor='black', fancybox=False)
