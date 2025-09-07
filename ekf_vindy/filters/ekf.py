@@ -3,11 +3,13 @@
 # TODO: Maybe use a configuration class (@dataclass or something)
 # TODO: Once you verify it works make things private
 # TODO: Check that the right upper block is correct!!!
+# TODO: You can remove the attribute "variables", can be inferred from generically from the dimension
 
 import numpy as np
 from typing import List, Callable, Iterable
 from ekf_vindy.filters.state import State, StateHistory
 from ekf_vindy.jacobian_utils import lambdified_jacobian_blocks
+from tqdm import tqdm
 
 class EKF:
     """
@@ -50,19 +52,20 @@ class EKF:
         What integration rule to use during the prediction step, either Euler or RK4 step.
     """
     def __init__(self, 
-                 initial_state: State,
+                 x0 : np.ndarray,
+                 p0 : np.ndarray,
                  Q: np.ndarray,
                  R: np.ndarray,
                  variables: List[str], 
                  library_terms: List[str], 
                  tracked_terms: List[List[int]], 
                  initial_coeffs: np.ndarray,
+                 t0 = 0.0,
                  integration_rule = 'Euler'):
         
         self._states = StateHistory()
         
-        # save initial state i.e. x_0 
-        self._states.append(initial_state)
+        # set process and observation noise
         self.Q = Q
         self.R = R
         self.n = len(variables) 
@@ -80,31 +83,50 @@ class EKF:
         """
         self.tracked_terms = [[{col: i for i, col in enumerate(self.terms_of_interest)}[col] for col in row] for row in tracked_terms]
         self.coeffs = initial_coeffs[:, self.terms_of_interest] # compress the coeffs matrix to only the terms of interest
-
+        # print(f'self.tracked_terms (compressed): {self.tracked_terms}')
         """ 
         we have a vector of the lambdified library terms "of interest", indices therefore correspond to compressed system
         we can use the same indices to access the tracked terms, they all indicate the same term in the sparse library 
         """
         self.lambdified_library = [self.lambdified_library[idx] for idx in self.terms_of_interest]
         self.library_symbols = [self.library_symbols[idx] for idx in self.terms_of_interest]
+        
         self.n_tracked_terms = sum(len(inner) for inner in self.tracked_terms)
-        self.p = len(self.terms_of_interest) + self.n_tracked_terms
+        self.p = len(self.terms_of_interest)
         self.H = np.eye(self.n, self.n + self.n_tracked_terms)
         self.I = np.eye(self.n + self.n_tracked_terms)
         self.integration_rule = integration_rule
-        
-    def _evaluate_f(self, x: np.ndarray):
-        """ 
-        Evaluate the dynamics f at the given state. This is Theta(x), we don't account for the coefficients xi here. 
-        This returns a vector. 
-        """
-        theta_xt = np.array([f(x) for f in self.lambdified_library])
-        return theta_xt
+
+        # save initial state (after extracting initial value of tracked terms, from initial_coeffs)
+        xi0 = np.array([initial_coeffs[i, col] for i, row in enumerate(tracked_terms) for col in row])
+        self._states.append(State(t0, x0, xi0, p0))
     
+    def _evaluate_theta(self, x: np.ndarray):
+        """ 
+        Evaluate the sparse library at the given state. This is Theta(x), we don't account for the coefficients xi here. 
+        This returns a vector of size (p, 1)
+        """
+        # annoying lambda functions return scalars, or (1, 1) vectors... .item() should fix that
+        theta_xt = np.array([f(x).item() if isinstance(f(x), np.ndarray) else f(x) 
+                     for f in self.lambdified_library])
+        
+        return theta_xt.reshape(-1, 1)
+    
+    def _evaluate_f(self, x: np.ndarray, xi: np.ndarray):
+        """
+        Evaluate the right-hand side of the dynamical system
+        """
+        theta = self._evaluate_theta(x) 
+        xi_t = self._big_xi_t(xi)
+
+        return xi_t @ theta
+
     def _predict(self, state: State, dt: float):
         """ Predict state (non-augmented, so no xi_tilde) and covariance (for augmented state) through numerical integration """
-        x_pred = self._integration_step(state.x, self._evaluate_f, dt, self.integration_rule).reshape(-1, 1)
         
+        evaluate_f = lambda x: self._evaluate_f(x, state.xi)
+        x_pred = self._integration_step(state.x, evaluate_f, dt, self.integration_rule).reshape(-1, 1)
+
         # Jacobian computed at predicted mean
         jacobian = self._jacobian_f(x_pred, state.xi)
 
@@ -139,8 +161,8 @@ class EKF:
         """ Stitch prediction and update steps"""
         x_pred, p_pred = self._predict(curr_state, dt)
         x_updt, xi_updt, p_updt = self._update(x_pred, p_pred, curr_state.xi, observation)
-        state_upd = State(curr_state.t + dt, x_updt, xi_updt, p_updt)
         
+        state_upd = State(curr_state.t + dt, x_updt, xi_updt, p_updt)
         return state_upd
     
     def run_filter(self, dts: Iterable[np.ndarray], observations: Iterable[np.ndarray], online = False):
@@ -148,16 +170,11 @@ class EKF:
         Main call to this class. We assume dt and observations to be of the same length.
         We take either the whole vector of (dt, observations) or do it in an online fashion with yield
         """
-        for dt, observation in zip(dts, observations):
+        for dt, observation in tqdm(zip(dts, observations), total=len(dts), desc="Processing"):
             previous_state = self._states.last
             state_upd = self._step(previous_state, dt, observation.reshape(-1, 1))
             self._states.append(state_upd)
             
-            # in case you are actually receiving observations in an online fashion (e.g., from a sensor)
-            if online: 
-                yield state_upd
-        return
-    
     @property
     def states(self):
         return self._states
@@ -202,23 +219,45 @@ class EKF:
         """
 
         # compute dTheta_t/dx (p x n matrix), here Theta is not the entire library, just the terms of interest
-        big_theta_t = np.zeros((self.n, self.p))
+        dt_theta_t = np.zeros((self.n, self.p))
 
         for i, row in enumerate(self.lambdified_derivatives):
             for j, f_j in enumerate(row):
-                big_theta_t[i, j] = f_j(x_pred)
-
-        left_upper_block = self._big_xi_t(xi) @ big_theta_t
+                dt_theta_t[i, j] = f_j(x_pred)
+        
+        left_upper_block = self._big_xi_t(xi) @ dt_theta_t.T
         right_upper_block = np.zeros((self.n, self.n_tracked_terms)) 
 
+        rub_symbolic =  [['0' for _ in range(self.n_tracked_terms)] for _ in range(self.n)]
+
         # fill right upper block with entries, this is essentially a tensor product (as shown in the paper)
+
+        """
+        consider self.tracked_terms (already from left to right)
+        for them, and only for them, select the corresponding column in self.tracked_terms
+        Just go from 0 to self,n_tracked terms, and all rows (dimensions of x)
+        
+        No wait, see the rows in tracked_terms (keep a counter k). modify matrix[row, k] with 
+        evaluation of whatever... whatever is the library term corresponding to that, which is given by
+        the value of tracked_term[row][current_col]
+        """
+        
+        k = 0
         for i, row in enumerate(self.tracked_terms):
             for j in row:
-                right_upper_block[i, j] = self.lambdified_library[j](x_pred)
+                right_upper_block[i, k] = self.lambdified_library[j](x_pred)
+                rub_symbolic[i][k] = str(self.library_symbols[j])
+                k += 1
 
+        # print(f'rub_symbolic: {rub_symbolic}')
+        # print(f'right_upper_block: {right_upper_block}')
+        # print(f'state.xi_states[0]: {self.states.xi_states[0]}')
+        # print(f'left_upper_block: {left_upper_block}')
+        
         # pad with zeroes
         jacobian_top = np.hstack([left_upper_block, right_upper_block])
         jacobian = np.vstack([jacobian_top, np.zeros((self.n_tracked_terms, self.n + self.n_tracked_terms))])
+        
 
         return jacobian
 
