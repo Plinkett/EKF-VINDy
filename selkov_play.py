@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 import sympy as sp
 from ekf_vindy.plotting import plotter
 from ekf_vindy.utils import add_noise_with_snr
-from ekf_vindy.filters import state
-from ekf_vindy.filters import ekf
+from ekf_vindy.filters.state import State
+from ekf_vindy.filters.ekf import EKF
 from scipy.integrate import odeint
 
 # remember to run as python -m script (if there are slashes use dots as in dir1.dir2.script)
@@ -43,9 +43,10 @@ params = {
     "b122_1": 1.0,
     "b122_2": 1.0,
 }
+np.random.seed(3)
 
-u1_0 = np.random.normal(0.2, 2, 16)
-u2_0 = np.random.normal(0.2, 2, 16)
+u1_0 = np.random.normal(0.2, 1.7, 16)
+u2_0 = np.random.normal(0.2, 1.7, 16)
 
 time_instances = np.arange(0, 100, 0.1)
 x_train = []
@@ -63,35 +64,46 @@ model.fit(x_train, t=0.1, multiple_trajectories=True)
 model.print()
 
 # generate trajectories with this model
-time_instances = np.arange(0, 300, 0.1)
-
-u1_0 = np.random.normal(0.2, 2, 1)
-u2_0 = np.random.normal(0.2, 2, 1)
+time_instances = np.arange(0, 300, 0.01)
+u1_0 = np.random.normal(0.2, 0.5, 1)
+u2_0 = np.random.normal(0.2, 0.5, 1)
 
 y0 = np.array([u1_0[0], u2_0[0]])
 X = odeint(selkov, y0, time_instances, args=(params, 50, 50, False))
 noisy_X = add_noise_with_snr(X, 25)
-# fig, ax = plotter.plot_trajectory(noisy_X, time_instances, x_tick_skip=30, title='Selkov oscillator')
-# plt.show()
+fig, ax = plotter.plot_trajectory(noisy_X, time_instances, x_tick_skip=30, title='Selkov oscillator')
+plt.show()
 
 # Now use filter !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
 
 # setup covariance matrices... sometimes values in code disagree with value in paper...
 
-# p = np.diag([1e-8, 1e-8, 1e-3, 1e-3, 1e-3, 1e-3, 1e-3, 1e-3, 1e-4])
-p = np.diag([1e-8, 1e-8, 5e-4, 1e-3, 5e-4, 1e-3, 1e-4, 5e-4, 1e-3])
+# p0 = np.diag([1e-8, 1e-8, 1e-3, 1e-3, 1e-3, 1e-3, 1e-3, 1e-3, 1e-4])
+p0 = np.diag([1e-8, 1e-8, 5e-4, 1e-3, 5e-4, 1e-3, 1e-4, 5e-4, 1e-3])
 # q = np.diag([1e-6, 1e-6, 1e-14, 1e-14, 1e-14, 1e-12, 1e-12, 1e-12, 1e-12, 1e-12]) 
 q = np.diag([8e-7, 8e-7, 5e-6, 1e-9, 1e-10, 1e-10, 1e-11, 1e-9, 1e-12])
+
 r = np.diag([5e-4, 5e-4])
 
 coeffs = model.coefficients()
+library_terms = model.get_feature_names()
 variables = model.feature_names
 x0 = noisy_X[0,:]
-print(x0)
 
-# # filter = EKF()
-# # filter.run_filter()
+print(f'library_terms: {library_terms}')
+tracked_terms = [[0, 1, 4, 8],
+                 [1, 2, 8]]
 
+filter = EKF(x0, p0, q, r, variables, library_terms, tracked_terms, coeffs, integration_rule="RK4")
+
+dts = np.diff(time_instances)
+observations = noisy_X[1:,:]
+
+filter.run_filter(dts, observations)
+
+filter_estimates = filter.states.x_states
+fig, x = plotter.plot_trajectory(filter_estimates, time_instances, x_tick_skip=30, title='Selkov model')
+plt.show()
 # TODO: It's useless to pass the state, just pass the x state 
 #       and the entire coefficient matrix (you need it anyway)
 #       from which you will slice and build your state.
