@@ -32,8 +32,6 @@ def selkov(y, t, params, t_offset = 0, t_bifurcation = 0, train = True):
 
     return [du1, du2]
 
-
-
 # set parameters
 params = {
     "rho": 0.92,
@@ -64,13 +62,13 @@ model.fit(x_train, t=0.1, multiple_trajectories=True)
 model.print()
 
 # generate trajectories with this model
-time_instances = np.arange(0, 300, 0.01)
-u1_0 = np.random.normal(0.2, 0.5, 1)
-u2_0 = np.random.normal(0.2, 0.5, 1)
+time_instances = np.arange(0, 300, 0.1)
+u1_0 = np.random.normal(0.2, 1, 1)
+u2_0 = np.random.normal(0.2, 1, 1)
 
 y0 = np.array([u1_0[0], u2_0[0]])
 X = odeint(selkov, y0, time_instances, args=(params, 50, 50, False))
-noisy_X = add_noise_with_snr(X, 25)
+noisy_X = add_noise_with_snr(X, 12)
 fig, ax = plotter.plot_trajectory(noisy_X, time_instances, x_tick_skip=30, title='Selkov oscillator')
 plt.show()
 

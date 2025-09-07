@@ -132,7 +132,7 @@ class EKF:
 
         # This is F * P + P * F^T + Q in the paper, it's just an anonymous function to be passed to our integrator.
         covariance_f = lambda p: jacobian @ p + p @ jacobian.T + self.Q
-        p_pred = self._integration_step(state.cov, covariance_f, dt)
+        p_pred = self._integration_step(state.cov, covariance_f, dt, self.integration_rule)
         # p_pred = jacobian @ state.cov @ jacobian.T + self.Q? Assuming a very small dt... better for discrete time SSMs, or use a probabilistic ODE solver lol.
 
         return x_pred, p_pred
@@ -142,8 +142,8 @@ class EKF:
         Compute updated estimate of state and covariance. For the moment, we consider a trivial observation model that selects a few state components.
         xi is just a vectorized version (size n_tracked_terms x 1) of the tracked_terms
         """
-        
-        # Kalman gain (USE CHOLESKY)
+
+        # Kalman gain (use square root implementation)
         g = p_pred @ self.H.T @ np.linalg.inv(self.H @ p_pred @ self.H.T + self.R)
         innovation = observation - x_pred 
 
@@ -228,32 +228,13 @@ class EKF:
         left_upper_block = self._big_xi_t(xi) @ dt_theta_t.T
         right_upper_block = np.zeros((self.n, self.n_tracked_terms)) 
 
-        rub_symbolic =  [['0' for _ in range(self.n_tracked_terms)] for _ in range(self.n)]
-
-        # fill right upper block with entries, this is essentially a tensor product (as shown in the paper)
-
-        """
-        consider self.tracked_terms (already from left to right)
-        for them, and only for them, select the corresponding column in self.tracked_terms
-        Just go from 0 to self,n_tracked terms, and all rows (dimensions of x)
-        
-        No wait, see the rows in tracked_terms (keep a counter k). modify matrix[row, k] with 
-        evaluation of whatever... whatever is the library term corresponding to that, which is given by
-        the value of tracked_term[row][current_col]
-        """
-        
+        # fill right upper block with entries, this is essentially a tensor product (as shown in the paper)    
         k = 0
         for i, row in enumerate(self.tracked_terms):
             for j in row:
                 right_upper_block[i, k] = self.lambdified_library[j](x_pred)
-                rub_symbolic[i][k] = str(self.library_symbols[j])
                 k += 1
 
-        # print(f'rub_symbolic: {rub_symbolic}')
-        # print(f'right_upper_block: {right_upper_block}')
-        # print(f'state.xi_states[0]: {self.states.xi_states[0]}')
-        # print(f'left_upper_block: {left_upper_block}')
-        
         # pad with zeroes
         jacobian_top = np.hstack([left_upper_block, right_upper_block])
         jacobian = np.vstack([jacobian_top, np.zeros((self.n_tracked_terms, self.n + self.n_tracked_terms))])
