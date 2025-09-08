@@ -1,5 +1,5 @@
 """ 
-Utils for converting strings (usually obtain from PySINDy library) into SymPy symbols for 
+Utils for converting strings (usually obtained from PySINDy library) into SymPy symbols for 
 symbolic differentiation, and easy Jacobian computation for EKF. 
 """
 
@@ -15,7 +15,6 @@ def sympify_str(variables: List[str], library_terms: List[str]):
     List of library terms can be obtained from model.get_feature_names()
     List of variables can be obtained with model.feature_names
     """
-    
     library_symbols = []
     var_symbols = sp.symbols(' '.join(variables))
     
