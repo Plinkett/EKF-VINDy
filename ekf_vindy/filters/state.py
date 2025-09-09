@@ -17,6 +17,12 @@ class State:
         Actual vector in R^n representing the state of the original dynamical system, either in latent space (with VAE) or the original one.
     xi_tilde : np.ndarray
         Vector of coefficients, obtained with VINDy or SINDy, that we are tracking. Ordered sequentially from left to right, top to bottom looking at the ODE system.
+    x_cal : np.ndarray
+        Augmented state, i.e., the concatenation of x and xi_tilde.
+    sdev : np.ndarray
+        Standard deviation of each component of the state.
+    state_with_sdev : np.ndarray
+        Augmented state concatenated with the standard deviations of each component.
     cov: np.ndarray
         Covariance matrix of x and phi.
     """
@@ -44,7 +50,15 @@ class State:
     @property
     def t(self) -> float:
         return self._t
-    
+
+    @property
+    def sdev(self) -> np.ndarray:
+        return np.sqrt(np.diag(self._cov)).reshape(-1, 1)
+
+    @property
+    def state_with_sdev(self) -> np.ndarray:
+        return np.hstack([self.x_cal, self.sdev])
+
     @property
     def cov(self) -> np.ndarray:
         """
@@ -83,7 +97,26 @@ class StateHistory:
         History of coefficient evolution. Currently assume it is flattened.
         """
         self._assert_not_empty()
-        return np.stack([state.xi.squeeze() for state in self._states])
+        return np.stack([state.xi_tilde.squeeze() for state in self._states])
+    @property 
+    def xcal_states(self) -> np.ndarray:
+        self._assert_not_empty()
+        return np.stack([state.x_cal.squeeze() for state in self._states])
+
+    @property 
+    def sdev_states(self) -> np.ndarray:
+        self._assert_not_empty()
+        return np.stack([state.sdev.squeeze() for state in self._states])
+
+    @property
+    def xcals_sdevs(self) -> np.ndarray:
+        self._assert_not_empty()
+        return np.stack([state.state_with_sdev for state in self._states])
+
+    @property
+    def cov_states(self) -> np.ndarray:
+        self._assert_not_empty()
+        return np.stack([state.cov for state in self._states])
 
     @property
     def length(self):
