@@ -1,4 +1,5 @@
 # TODO: Once you verify it works make things private
+# TODO: You could work with the square root (and make it more robust) if you properly discretize the Lyapunov equation (Van-Loan formula)
 
 import numpy as np
 from tqdm import tqdm
@@ -49,14 +50,7 @@ class EKF:
     integration_rule : str
         What integration rule to use during the prediction step, either Euler or RK4 step.
     """
-    def __init__(self, 
-                 x0 : np.ndarray,
-                 p0 : np.ndarray,
-                 t0: float = 0.0, 
-                 *,   
-                 config: DynamicsConfig,
-                 integration_rule = 'Euler'):
-        
+    def __init__(self, x0 : np.ndarray, p0 : np.ndarray, t0: float = 0.0, *, config: DynamicsConfig, integration_rule = 'Euler'):
         self._states = StateHistory()
         
         # set process and observation noise
