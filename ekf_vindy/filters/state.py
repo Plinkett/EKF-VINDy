@@ -1,8 +1,6 @@
 """ 
 Base classes for the augmented state, as described in the "Online learning in bifurcating dynamic systems via SINDy
 and Kalman filtering" paper
-
-TODO: It would also be better to work with the square root of the covariance... would change the math inside ekf.py and how we store the covariance.
 """
 import numpy as np
 
@@ -17,16 +15,21 @@ class State:
         Time instant to which this state refers.
     x : np.ndarray
         Actual vector in R^n representing the state of the original dynamical system, either in latent space (with VAE) or the original one.
-    xi : np.ndarray
-        Vector of coefficients, obtained with VINDy or SINDy, that we are tracking. 
+    xi_tilde : np.ndarray
+        Vector of coefficients, obtained with VINDy or SINDy, that we are tracking. Ordered sequentially from left to right, top to bottom looking at the ODE system.
+    x_cal : np.ndarray
+        Augmented state, i.e., the concatenation of x and xi_tilde.
+    sdev : np.ndarray
+        Standard deviation of each component of the state.
+    state_with_sdev : np.ndarray
+        Augmented state concatenated with the standard deviations of each component.
     cov: np.ndarray
-        Covariance matrix of x and phi. I can't recall exactly right now, but I think it has a block structure, in that case it would be better
-        to save the 2 blocks separately. 
+        Covariance matrix of x and phi.
     """
-    def __init__(self, t: float, x: np.ndarray, xi: np.ndarray, cov: np.ndarray):
+    def __init__(self, t: float, x: np.ndarray, xi_tilde: np.ndarray, cov: np.ndarray):
         self._t = t
         self._x = x.reshape(-1, 1)
-        self._xi = xi.reshape(-1, 1)
+        self._xi_tilde = xi_tilde.reshape(-1, 1)
         self._cov = cov.squeeze()
 
     @property
@@ -34,20 +37,28 @@ class State:
         return self._x
     
     @property 
-    def xi(self) -> np.ndarray:
-        return self._xi
+    def xi_tilde(self) -> np.ndarray:
+        return self._xi_tilde
     
     @property
     def x_cal(self) -> np.ndarray:
         """
         This is the "caligraphic x" from the paper i.e., the augmented state. Useful in the updated step.
         """
-        return np.vstack([self._x, self._xi])
+        return np.vstack([self._x, self._xi_tilde])
 
     @property
     def t(self) -> float:
         return self._t
-    
+
+    @property
+    def sdev(self) -> np.ndarray:
+        return np.sqrt(np.diag(self._cov)).reshape(-1, 1)
+
+    @property
+    def state_with_sdev(self) -> np.ndarray:
+        return np.hstack([self.x_cal, self.sdev])
+
     @property
     def cov(self) -> np.ndarray:
         """
@@ -77,17 +88,35 @@ class StateHistory:
         The states of the dynamical system, without coefficients, in an array.
         """
         self._assert_not_empty()
-        # Squeeze to get output of shape (T, n) instead of (T, n. Where T are the time instances.
+        # Squeeze to get output of shape (T, n) instead of (T, n). Where T are the time instances.
         return np.stack([state.x.squeeze() for state in self._states])
 
     @property 
-    def xi_states(self) -> np.ndarray:
+    def xi_tilde_states(self) -> np.ndarray:
         """ 
-        History of coefficient evolution, however they should be in the matrix structure... to correct later.
-        Currently assume it is flattened.
+        History of coefficient evolution. Currently assume it is flattened.
         """
         self._assert_not_empty()
-        return np.stack([state.xi.squeeze() for state in self._states])
+        return np.stack([state.xi_tilde.squeeze() for state in self._states])
+    @property 
+    def xcal_states(self) -> np.ndarray:
+        self._assert_not_empty()
+        return np.stack([state.x_cal.squeeze() for state in self._states])
+
+    @property 
+    def sdev_states(self) -> np.ndarray:
+        self._assert_not_empty()
+        return np.stack([state.sdev.squeeze() for state in self._states])
+
+    @property
+    def xcals_sdevs(self) -> np.ndarray:
+        self._assert_not_empty()
+        return np.stack([state.state_with_sdev for state in self._states])
+
+    @property
+    def cov_states(self) -> np.ndarray:
+        self._assert_not_empty()
+        return np.stack([state.cov for state in self._states])
 
     @property
     def length(self):
