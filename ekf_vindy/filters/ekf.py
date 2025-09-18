@@ -6,6 +6,7 @@ from tqdm import tqdm
 from typing import Iterable
 from scipy.linalg import cho_factor, cho_solve
 from ekf_vindy.filters.state import State, StateHistory
+from ekf_vindy.filters.constraints import Constraint
 from ekf_vindy.filters.config import DynamicsConfig
 from ekf_vindy.jacobian_utils import lambdified_jacobian_blocks
 from ekf_vindy.utils import integration_step
@@ -134,7 +135,7 @@ class EKF:
         p_pred = 0.5 * (p_pred + p_pred.T)
 
         return x_pred, p_pred
-
+        
     def _update(self, x_pred: np.ndarray, p_pred: np.ndarray, xi_tilde: np.ndarray, observation: np.ndarray):
         """
         Compute updated estimate of state and covariance. For the moment, we consider a trivial observation model that selects a few state components.
@@ -156,18 +157,51 @@ class EKF:
         cal_x_updt = cal_x_pred + gain @ innovation
 
         # update covariance (Joseph's form) and enforce symmetry
-        p_updt = (self.I - gain @ self.H) @ p_pred @ (self.I - gain @ self.H).T + gain @ self.R @ gain.T
+        id_minus_KH = self.I - gain @ self.H
+        p_updt = id_minus_KH @ p_pred @ id_minus_KH.T + gain @ self.R @ gain.T
         p_updt = 0.5 * (p_updt + p_updt.T)
 
         x_updt, xi_tilde_updt = cal_x_updt[:self.n], cal_x_updt[-self.n_tracked_terms:]
         
         return x_updt, xi_tilde_updt, p_updt
 
-    def _step(self, curr_state: State, dt: float, observation: np.ndarray):
+    def _update_constraint(self, x_uc: np.ndarray, p_uc: np.ndarray, xi_tilde_uc: np.ndarray, constr: Constraint):
+        """
+        Use pseudo-observtion approach to update state. "uc" stands for "unconstrainted".
+        """
+
+        # jacobian of constraint (receives entire state as input and handles everything internally)
+        h_j =  constr.jacobian(x_uc)
+
+        # compute cholesky for Kalman gain
+        cholesky, lower = cho_factor(h_j @ p_uc @ h_j.T + constr.R, overwrite_a=False, check_finite=False)
+        b = (p_uc @ h_j.T)
+
+        # solve linear system and obtain Kalman gain (observation is just seeing how off we are from the constraint, which is equal to zero)
+        gain = cho_solve((cholesky, lower), b.T).T
+        innovation = constr.constraint(x_uc)
+
+        # stack state and parameters (unconstrained)
+        cal_x_uc = np.vstack([x_uc, xi_tilde_uc])
+        cal_x_constr = cal_x_uc + gain @ innovation
+
+        # update covariance and enforce symmetry
+        id_minus_KH = self.I - gain @ h_j
+        p_constr = id_minus_KH @ p_uc @ id_minus_KH.T + gain @ constr.R @ gain.T
+        p_constr = 0.5 * (p_constr + p_constr.T)
+
+        x_constr, xi_tilde_constr = cal_x_constr[:self.n], cal_x_constr[-self.n_tracked_terms:]
+
+        return x_constr, xi_tilde_constr, p_constr
+    
+    def _step(self, curr_state: State, dt: float, observation: np.ndarray, constr: Constraint | None = None):
         """ Stitch prediction and update steps"""
         x_pred, p_pred = self._predict(curr_state, dt)
         x_updt, xi_tilde_updt, p_updt = self._update(x_pred, p_pred, curr_state.xi_tilde, observation)
         
+        if constr: 
+            x_updt, xi_tilde_updt, p_updt = self._update_constraint(x_updt, p_updt, xi_tilde_updt, constr)
+    
         state_upd = State(curr_state.t + dt, x_updt, xi_tilde_updt, p_updt)
         return state_upd
     
