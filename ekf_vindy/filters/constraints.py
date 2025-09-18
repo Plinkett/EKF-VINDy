@@ -10,6 +10,7 @@ class Constraint:
     def __init__(self, constraint: Callable, jacobian: Callable, R: np.ndarray):
         self._constraint = constraint
         self._jacobian = jacobian
+        self._R = R
         self._assert_valid()
     
     @property
@@ -27,5 +28,5 @@ class Constraint:
     def _assert_valid(self):
         if self._constraint is None or self._jacobian is None:
             raise ValueError('Constraint or jacobian are empty')
-        if self.R.ndim != 2 or (self.R.shape[0] != self.R.shape[1]):
+        if self._R.ndim != 2 or (self._R.shape[0] != self._R.shape[1]):
             raise ValueError('R must be a square matrix')

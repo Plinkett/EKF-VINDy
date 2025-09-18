@@ -90,14 +90,14 @@ class EKF:
         xi_tilde_0 = np.array([config.initial_coeffs[i, col] for i, row in enumerate(config.tracked_terms) for col in row])
         self._states.append(State(t0, x0, xi_tilde_0, p0))
     
-    def run_filter(self, dts: Iterable[np.ndarray], observations: Iterable[np.ndarray], online = False):
+    def run_filter(self, dts: Iterable[np.ndarray], observations: Iterable[np.ndarray], constraint: Constraint | None = None):  
         """ 
         Main call to this class. We assume dt and observations to be of the same length.
         We take either the whole vector of (dt, observations) or do it in an online fashion with yield
         """
         for dt, observation in tqdm(zip(dts, observations), total=len(dts), desc="Processing"):
             previous_state = self._states.last
-            state_upd = self._step(previous_state, dt, observation.reshape(-1, 1))
+            state_upd = self._step(previous_state, dt, observation.reshape(-1, 1), constraint)
             self._states.append(state_upd)
 
     def _evaluate_theta(self, x: np.ndarray):
@@ -140,57 +140,76 @@ class EKF:
         """
         Compute updated estimate of state and covariance. For the moment, we consider a trivial observation model that selects a few state components.
         xi is just a vectorized version of the tracked coefficients, size (n_tracked_terms x 1) 
+        
+        We need many weird numerical tricks here to ensure numerical stability... especially because of the energy constraints...
         """
 
-        # Cholesky decomposition of innovation covariance
-        cholesky, lower = cho_factor(self.H @ p_pred @ self.H.T + self.R, overwrite_a=False, check_finite=False)
-        
-        # transpose cross-covariance
-        b = (p_pred @ self.H.T)
-        
-        # solve linear system and obtain Kalman gain
-        gain = cho_solve((cholesky, lower), b.T).T
+        # Symmetrize and PSD-correct predicted covariance
+        p_pred = 0.5 * (p_pred + p_pred.T)
+        eigvals, eigvecs = np.linalg.eigh(p_pred)
+        eigvals = np.clip(eigvals, 1e-12, None)
+        p_pred = eigvecs @ np.diag(eigvals) @ eigvecs.T
+
+        # Innovation covariance with tiny jitter
+        s = self.H @ p_pred @ self.H.T + self.R
+        s += 1e-12 * np.eye(s.shape[0])
+
+        # Compute Kalman gain safely
+        try:
+            cho, lower = cho_factor(s)
+            gain = cho_solve((cho, lower), (p_pred @ self.H.T).T).T
+        except np.linalg.LinAlgError:
+            # fallback to pseudo-inverse if still failing
+            gain = p_pred @ self.H.T @ np.linalg.pinv(s)
+
+        # Innovation
         innovation = observation - x_pred
 
-        # update full state
+        # Update full state (stacked with parameters)
         cal_x_pred = np.vstack([x_pred, xi_tilde])
         cal_x_updt = cal_x_pred + gain @ innovation
+        x_updt, xi_tilde_updt = cal_x_updt[:self.n], cal_x_updt[-self.n_tracked_terms:]
 
-        # update covariance (Joseph's form) and enforce symmetry
+        # Joseph-form covariance update + symmetry
         id_minus_KH = self.I - gain @ self.H
         p_updt = id_minus_KH @ p_pred @ id_minus_KH.T + gain @ self.R @ gain.T
-        p_updt = 0.5 * (p_updt + p_updt.T)
 
-        x_updt, xi_tilde_updt = cal_x_updt[:self.n], cal_x_updt[-self.n_tracked_terms:]
-        
         return x_updt, xi_tilde_updt, p_updt
 
     def _update_constraint(self, x_uc: np.ndarray, p_uc: np.ndarray, xi_tilde_uc: np.ndarray, constr: Constraint):
         """
         Use pseudo-observtion approach to update state. "uc" stands for "unconstrainted".
+        Same tricks as with self._update()
         """
+        p_uc = 0.5 * (p_uc + p_uc.T)
+        eigvals, eigvecs = np.linalg.eigh(p_uc)
+        eigvals = np.clip(eigvals, 1e-12, None)
+        p_uc = eigvecs @ np.diag(eigvals) @ eigvecs.T
 
-        # jacobian of constraint (receives entire state as input and handles everything internally)
-        h_j =  constr.jacobian(x_uc)
+        h_j = constr.jacobian(x_uc)
 
-        # compute cholesky for Kalman gain
-        cholesky, lower = cho_factor(h_j @ p_uc @ h_j.T + constr.R, overwrite_a=False, check_finite=False)
-        b = (p_uc @ h_j.T)
+        s = h_j @ p_uc @ h_j.T + constr.R
+        s += 1e-12 * np.eye(s.shape[0])  # tiny jitter
 
-        # solve linear system and obtain Kalman gain (observation is just seeing how off we are from the constraint, which is equal to zero)
-        gain = cho_solve((cholesky, lower), b.T).T
+        # Compute Kalman gain safely
+        try:
+            cho, lower = cho_factor(s)
+            gain = cho_solve((cho, lower), (p_uc @ h_j.T).T).T
+        except np.linalg.LinAlgError:
+            # fallback to pseudo-inverse if still failing
+            gain = p_uc @ h_j.T @ np.linalg.pinv(s) 
+
+        # Compute innovation
         innovation = constr.constraint(x_uc)
 
-        # stack state and parameters (unconstrained)
+        # Update state
         cal_x_uc = np.vstack([x_uc, xi_tilde_uc])
-        cal_x_constr = cal_x_uc + gain @ innovation
+        cal_x_constr = cal_x_uc + gain @ innovation * 0.1
+        x_constr, xi_tilde_constr = cal_x_constr[:self.n], cal_x_constr[-self.n_tracked_terms:]
 
-        # update covariance and enforce symmetry
+        # Joseph form covariance update + symmetry
         id_minus_KH = self.I - gain @ h_j
         p_constr = id_minus_KH @ p_uc @ id_minus_KH.T + gain @ constr.R @ gain.T
-        p_constr = 0.5 * (p_constr + p_constr.T)
-
-        x_constr, xi_tilde_constr = cal_x_constr[:self.n], cal_x_constr[-self.n_tracked_terms:]
 
         return x_constr, xi_tilde_constr, p_constr
     

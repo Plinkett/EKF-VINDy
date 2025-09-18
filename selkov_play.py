@@ -68,8 +68,8 @@ u2_0 = np.random.normal(0.2, 1, 1)
 y0 = np.array([u1_0[0], u2_0[0]])
 X = odeint(selkov, y0, time_instances, args=(params, 50, 50, False))
 noisy_X = add_noise_with_snr(X, 25)
-fig, ax = plotter.plot_trajectory(noisy_X, time_instances, x_tick_skip=30, title='Selkov oscillator')
-plt.show()
+# fig, ax = plotter.plot_trajectory(noisy_X, time_instances, x_tick_skip=30, title='Selkov oscillator')
+# plt.show()
 
 p0 = np.diag([1e-8, 1e-8, 5e-4, 1e-3, 5e-4, 1e-3, 1e-4, 5e-4, 1e-3])
 q = np.diag([8e-7, 8e-7, 5e-6, 1e-9, 1e-10, 1e-10, 1e-11, 1e-9, 1e-12])
@@ -84,6 +84,7 @@ print(f'library_terms: {library_terms}')
 tracked_terms = [[0, 1, 4, 8],
                  [1, 2, 8]]
 
+print(x0.shape)
 config = DynamicsConfig(variables, library_terms, tracked_terms, coeffs, q, r)
 filter = EKF(x0, p0, config=config, integration_rule="RK4")
 
@@ -92,8 +93,8 @@ observations = noisy_X[1:,:]
 
 filter.run_filter(dts, observations)
 
-filter_estimates = filter.states.xcal_states[:, 0:2]
-sdevs = filter.states.sdev_states[:, 0:2]
+filter_estimates = filter.states.xcal_states[:, 2:-1]
+sdevs = filter.states.sdev_states[:, 2:-1]
 
 fig, x = plotter.plot_trajectory(filter_estimates, time_instances, sdevs, x_tick_skip=30, title='Selkov oscillator')
 plt.show()
