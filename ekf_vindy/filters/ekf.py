@@ -121,7 +121,6 @@ class EKF:
 
     def _predict(self, state: State, dt: float):
         """ Predict state (non-augmented, so no xi_tilde) and covariance (for augmented state) through numerical integration """
-
         big_xi_t = self._big_xi_t(state.xi_tilde)
         evaluate_f = lambda x: self._evaluate_f(x, big_xi_t)
         x_pred = integration_step(state.x, evaluate_f, dt, self.integration_rule).reshape(-1, 1)
@@ -145,7 +144,6 @@ class EKF:
         """
 
         # Symmetrize and PSD-correct predicted covariance
-        p_pred = 0.5 * (p_pred + p_pred.T)
         eigvals, eigvecs = np.linalg.eigh(p_pred)
         eigvals = np.clip(eigvals, 1e-12, None)
         p_pred = eigvecs @ np.diag(eigvals) @ eigvecs.T
@@ -173,92 +171,59 @@ class EKF:
         # Joseph-form covariance update + symmetry
         id_minus_KH = self.I - gain @ self.H
         p_updt = id_minus_KH @ p_pred @ id_minus_KH.T + gain @ self.R @ gain.T
+        p_updt = 0.5 * (p_updt + p_updt.T)
 
         return x_updt, xi_tilde_updt, p_updt
     
-    # def _update_constraint(self, x_uc: np.ndarray, p_uc: np.ndarray,
-    #                    xi_tilde_uc: np.ndarray, constr: Constraint):
-    #     """
-    #     Pseudo-observation update that only corrects the dynamical system state x,
-    #     leaving parameters xi_tilde and their covariance untouched.
-    #     """
-    #     # Ensure symmetry and positive definiteness of covariance
-    #     p_uc = 0.5 * (p_uc + p_uc.T)
-    #     eigvals, eigvecs = np.linalg.eigh(p_uc)
-    #     eigvals = np.clip(eigvals, 1e-12, None)
-    #     p_uc = eigvecs @ np.diag(eigvals) @ eigvecs.T
-
-    #     # --- Extract state block ---
-    #     P_xx = p_uc[:self.n, :self.n]
-
-    #     # Jacobian wrt state only
-    #     h_j = constr.jacobian(x_uc)  # shape (m, n)
-
-    #     # Innovation covariance
-    #     s = h_j @ P_xx @ h_j.T + constr.R
-    #     s += 1e-12 * np.eye(s.shape[0])
-
-    #     # Kalman gain restricted to x-block
-    #     try:
-    #         cho, lower = cho_factor(s)
-    #         gain_x = cho_solve((cho, lower), (P_xx @ h_j.T).T).T
-    #     except np.linalg.LinAlgError:
-    #         gain_x = P_xx @ h_j.T @ np.linalg.pinv(s)
-
-    #     # Innovation
-    #     innovation = constr.constraint(x_uc)
-
-    #     # Update only x
-    #     x_constr = x_uc + gain_x @ innovation * 0.1
-    #     xi_tilde_constr = xi_tilde_uc  # unchanged
-
-    #     # Joseph form covariance update for P_xx only
-    #     I_x = np.eye(self.n)
-    #     id_minus_KH = I_x - gain_x @ h_j
-    #     P_xx_constr = id_minus_KH @ P_xx @ id_minus_KH.T + gain_x @ constr.R @ gain_x.T
-    #     P_xx_constr = 0.5 * (P_xx_constr + P_xx_constr.T)
-
-    #     # Rebuild full covariance: only P_xx changes
-    #     p_constr = p_uc.copy()
-    #     p_constr[:self.n, :self.n] = P_xx_constr
-
-    #     return x_constr, xi_tilde_constr, p_constr
-
-    def _update_constraint(self, x_uc: np.ndarray, p_uc: np.ndarray, xi_tilde_uc: np.ndarray, constr: Constraint):
+    def _update_constraint(self, x_uc: np.ndarray, p_uc: np.ndarray,
+                       xi_tilde_uc: np.ndarray, constr: Constraint, only_x: True, alpha = 0.1):
         """
-        Use pseudo-observtion approach to update state. "uc" stands for "unconstrainted".
-        Same tricks as with self._update()
+        Pseudo-observation update that only corrects the dynamical system state x,
+        leaving parameters xi_tilde and their covariance untouched.
         """
-        p_uc = 0.5 * (p_uc + p_uc.T)
+
         eigvals, eigvecs = np.linalg.eigh(p_uc)
         eigvals = np.clip(eigvals, 1e-12, None)
-        p_uc = eigvecs @ np.diag(eigvals) @ eigvecs.T
+        p_uc_copy = eigvecs @ np.diag(eigvals) @ eigvecs.T
 
-        h_j = constr.jacobian(x_uc)
+        h_j = constr.jacobian(x_uc)  # shape (m, n)
 
-        s = h_j @ p_uc @ h_j.T + constr.R
-        s += 1e-12 * np.eye(s.shape[0])  # tiny jitter
+        # --- extract state block ---
+        if only_x:
+            p_uc_copy = p_uc[:self.n, :self.n]
+            h_j = h_j[:, :self.n]
 
-        # Compute Kalman gain safely
+        # innovation covariance
+        s = h_j @ p_uc_copy @ h_j.T + constr.R
+        s += 1e-12 * np.eye(s.shape[0])
+  
+        # Kalman gain restricted to x-block
         try:
             cho, lower = cho_factor(s)
-            gain = cho_solve((cho, lower), (p_uc @ h_j.T).T).T
+            gain = cho_solve((cho, lower), (p_uc_copy @ h_j.T).T).T
         except np.linalg.LinAlgError:
-            # fallback to pseudo-inverse if still failing
-            gain = p_uc @ h_j.T @ np.linalg.pinv(s) 
+            gain = p_uc_copy @ h_j.T @ np.linalg.pinv(s)
 
-        # Compute innovation
         innovation = constr.constraint(x_uc)
+        
+        # update whole state or only x and covariance blocks related to x
+        if only_x:
+            x_constr = x_uc + gain @ innovation * alpha
+            xi_tilde_constr = xi_tilde_uc
+            id_minus_KH = np.eye(self.n) - gain @ h_j
+            p_xx_constr = id_minus_KH @ p_uc_copy @ id_minus_KH.T + gain @ constr.R @ gain.T
+            p_constr = p_uc.copy()
+            p_constr[:self.n, :self.n] = p_xx_constr
+        else:
+            cal_x_uc = np.vstack([x_uc, xi_tilde_uc])
+            cal_x_constr = cal_x_uc + gain @ innovation * alpha
+            x_constr = cal_x_constr[:self.n]
+            xi_tilde_constr = cal_x_constr[-self.n_tracked_terms:]
+            id_minus_KH = self.I - gain @ h_j
+            p_constr = id_minus_KH @ p_uc_copy @ id_minus_KH.T + gain @ constr.R @ gain.T
 
-        # Update state
-        cal_x_uc = np.vstack([x_uc, xi_tilde_uc])
-        cal_x_constr = cal_x_uc + gain @ innovation * 0.1
-        x_constr, xi_tilde_constr = cal_x_constr[:self.n], cal_x_constr[-self.n_tracked_terms:]
-
-        # Joseph form covariance update + symmetry
-        id_minus_KH = self.I - gain @ h_j
-        p_constr = id_minus_KH @ p_uc @ id_minus_KH.T + gain @ constr.R @ gain.T
-
+        p_constr = 0.5 * (p_constr + p_constr.T)
+        
         return x_constr, xi_tilde_constr, p_constr
     
     def _step(self, curr_state: State, dt: float, observation: np.ndarray, constr: Constraint | None = None):
@@ -267,8 +232,8 @@ class EKF:
         x_updt, xi_tilde_updt, p_updt = self._update(x_pred, p_pred, curr_state.xi_tilde, observation)
         
         if constr: 
-            x_updt, xi_tilde_updt, p_updt = self._update_constraint(x_updt, p_updt, xi_tilde_updt, constr)
-    
+            x_updt, xi_tilde_updt, p_updt = self._update_constraint(x_updt, p_updt, xi_tilde_updt, constr, False, alpha=0.1)
+
         state_upd = State(curr_state.t + dt, x_updt, xi_tilde_updt, p_updt)
         return state_upd
     
