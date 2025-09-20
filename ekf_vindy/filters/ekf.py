@@ -175,6 +175,54 @@ class EKF:
         p_updt = id_minus_KH @ p_pred @ id_minus_KH.T + gain @ self.R @ gain.T
 
         return x_updt, xi_tilde_updt, p_updt
+    
+    # def _update_constraint(self, x_uc: np.ndarray, p_uc: np.ndarray,
+    #                    xi_tilde_uc: np.ndarray, constr: Constraint):
+    #     """
+    #     Pseudo-observation update that only corrects the dynamical system state x,
+    #     leaving parameters xi_tilde and their covariance untouched.
+    #     """
+    #     # Ensure symmetry and positive definiteness of covariance
+    #     p_uc = 0.5 * (p_uc + p_uc.T)
+    #     eigvals, eigvecs = np.linalg.eigh(p_uc)
+    #     eigvals = np.clip(eigvals, 1e-12, None)
+    #     p_uc = eigvecs @ np.diag(eigvals) @ eigvecs.T
+
+    #     # --- Extract state block ---
+    #     P_xx = p_uc[:self.n, :self.n]
+
+    #     # Jacobian wrt state only
+    #     h_j = constr.jacobian(x_uc)  # shape (m, n)
+
+    #     # Innovation covariance
+    #     s = h_j @ P_xx @ h_j.T + constr.R
+    #     s += 1e-12 * np.eye(s.shape[0])
+
+    #     # Kalman gain restricted to x-block
+    #     try:
+    #         cho, lower = cho_factor(s)
+    #         gain_x = cho_solve((cho, lower), (P_xx @ h_j.T).T).T
+    #     except np.linalg.LinAlgError:
+    #         gain_x = P_xx @ h_j.T @ np.linalg.pinv(s)
+
+    #     # Innovation
+    #     innovation = constr.constraint(x_uc)
+
+    #     # Update only x
+    #     x_constr = x_uc + gain_x @ innovation * 0.1
+    #     xi_tilde_constr = xi_tilde_uc  # unchanged
+
+    #     # Joseph form covariance update for P_xx only
+    #     I_x = np.eye(self.n)
+    #     id_minus_KH = I_x - gain_x @ h_j
+    #     P_xx_constr = id_minus_KH @ P_xx @ id_minus_KH.T + gain_x @ constr.R @ gain_x.T
+    #     P_xx_constr = 0.5 * (P_xx_constr + P_xx_constr.T)
+
+    #     # Rebuild full covariance: only P_xx changes
+    #     p_constr = p_uc.copy()
+    #     p_constr[:self.n, :self.n] = P_xx_constr
+
+    #     return x_constr, xi_tilde_constr, p_constr
 
     def _update_constraint(self, x_uc: np.ndarray, p_uc: np.ndarray, xi_tilde_uc: np.ndarray, constr: Constraint):
         """
