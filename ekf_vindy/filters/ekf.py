@@ -20,6 +20,8 @@ class EKF:
 
     states : StateHistory
         History of states we infer.
+    observations : List[np.ndarray]
+        List of observations we receive.
     Q : np.ndarray
         Process noise covariance.
     R : np.ndarray
@@ -53,6 +55,7 @@ class EKF:
     """
     def __init__(self, x0 : np.ndarray, p0 : np.ndarray, t0: float = 0.0, *, config: DynamicsConfig, integration_rule = 'Euler'):
         self._states = StateHistory()
+        self._observations = [x0.reshape(-1, 1)]  
         
         # set process and observation noise
         self.Q = config.Q
@@ -176,17 +179,26 @@ class EKF:
         return x_updt, xi_tilde_updt, p_updt
     
     def _update_constraint(self, x_uc: np.ndarray, p_uc: np.ndarray,
-                       xi_tilde_uc: np.ndarray, constr: Constraint, only_x: True, alpha = 0.1):
+                       xi_tilde_uc: np.ndarray, constr: Constraint, observation: np.ndarray, dt: float, 
+                       x_pred: np.ndarray, xi_pred: np.ndarray, only_x = False):
         """
         Pseudo-observation update that only corrects the dynamical system state x,
         leaving parameters xi_tilde and their covariance untouched.
         """
 
+        # energy difference estimated from current and previous observation 
+        loss_obs = constr.aux_function(observation, self.observations[-1]) 
+        
+        # predicted energy difference from model 
+        prev_state = self._states.last
+        loss_predicted = constr.constraint(prev_state.x, prev_state.xi_tilde, dt)
+
         eigvals, eigvecs = np.linalg.eigh(p_uc)
         eigvals = np.clip(eigvals, 1e-12, None)
         p_uc_copy = eigvecs @ np.diag(eigvals) @ eigvecs.T
 
-        h_j = constr.jacobian(x_uc)  # shape (m, n)
+        # h_j = constr.jacobian(x_uc)  
+        h_j = constr.jacobian(x_pred.squeeze(), xi_pred.squeeze(), dt)
 
         # --- extract state block ---
         if only_x:
@@ -204,11 +216,11 @@ class EKF:
         except np.linalg.LinAlgError:
             gain = p_uc_copy @ h_j.T @ np.linalg.pinv(s)
 
-        innovation = constr.constraint(x_uc)
-        
+        innovation = (loss_obs - loss_predicted).reshape(-1, 1)
+        # print(f'Innovation (constraint): {innovation.ravel()}')
         # update whole state or only x and covariance blocks related to x
         if only_x:
-            x_constr = x_uc + gain @ innovation * alpha
+            x_constr = x_uc + gain @ innovation 
             xi_tilde_constr = xi_tilde_uc
             id_minus_KH = np.eye(self.n) - gain @ h_j
             p_xx_constr = id_minus_KH @ p_uc_copy @ id_minus_KH.T + gain @ constr.R @ gain.T
@@ -216,25 +228,28 @@ class EKF:
             p_constr[:self.n, :self.n] = p_xx_constr
         else:
             cal_x_uc = np.vstack([x_uc, xi_tilde_uc])
-            cal_x_constr = cal_x_uc + gain @ innovation * alpha
+            cal_x_constr = cal_x_uc + gain @ innovation 
             x_constr = cal_x_constr[:self.n]
             xi_tilde_constr = cal_x_constr[-self.n_tracked_terms:]
             id_minus_KH = self.I - gain @ h_j
             p_constr = id_minus_KH @ p_uc_copy @ id_minus_KH.T + gain @ constr.R @ gain.T
 
         p_constr = 0.5 * (p_constr + p_constr.T)
-        
+   
         return x_constr, xi_tilde_constr, p_constr
     
     def _step(self, curr_state: State, dt: float, observation: np.ndarray, constr: Constraint | None = None):
         """ Stitch prediction and update steps"""
+        
         x_pred, p_pred = self._predict(curr_state, dt)
         x_updt, xi_tilde_updt, p_updt = self._update(x_pred, p_pred, curr_state.xi_tilde, observation)
         
         if constr: 
-            x_updt, xi_tilde_updt, p_updt = self._update_constraint(x_updt, p_updt, xi_tilde_updt, constr, False, alpha=0.1)
+            x_updt, xi_tilde_updt, p_updt = self._update_constraint(x_updt, p_updt, xi_tilde_updt, constr, observation, dt, x_pred, curr_state.xi_tilde, False)
 
         state_upd = State(curr_state.t + dt, x_updt, xi_tilde_updt, p_updt)
+        self._observations.append(observation)
+        
         return state_upd
     
     def _big_xi_t(self, xi_tilde: np.ndarray):
@@ -283,6 +298,10 @@ class EKF:
     @property
     def states(self):
         return self._states
+    
+    @property
+    def observations(self):
+        return self._observations
     
     def _tuning(self):
         # Must be done at some point if covariance is not provided...
