@@ -93,6 +93,13 @@ observations = noisy_X[1:,:]
 
 filter.run_filter(dts, observations)
 
+
+filter_estimates = filter.states.xcal_states[:, 0:2]
+sdevs = filter.states.sdev_states[:, 0:2]
+
+fig, x = plotter.plot_trajectory(filter_estimates, time_instances, sdevs, x_tick_skip=30, title='Selkov oscillator')
+plt.show()
+
 filter_estimates = filter.states.xcal_states[:, 2:-1]
 sdevs = filter.states.sdev_states[:, 2:-1]
 
