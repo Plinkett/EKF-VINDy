@@ -3,14 +3,16 @@ from typing import Callable
 
 """
 Simple tuple class for constraints (and their Jacobians). May be expanded with autodiff... 
+Auxiliary function is optional, for stuff like computation of energy difference.
 """
 
 class Constraint:
     
-    def __init__(self, constraint: Callable, jacobian: Callable, R: np.ndarray):
+    def __init__(self, constraint: Callable, jacobian: Callable, R: np.ndarray, aux_function: Callable = None):
         self._constraint = constraint
         self._jacobian = jacobian
         self._R = R
+        self._aux_function = aux_function
         self._assert_valid()
     
     @property
@@ -24,6 +26,10 @@ class Constraint:
     @property
     def R(self):
         return self._R
+    
+    @property
+    def aux_function(self):
+        return self._aux_function
     
     def _assert_valid(self):
         if self._constraint is None or self._jacobian is None:
