@@ -138,11 +138,25 @@ class LossDuffingCubic(Constraint):
 
         dL_dx0 = 0.0
         dL_dx1 = -(lin_damp * 2 * v + cubic_damp * 4 * v**3) * dt
-        dL_dx2 = -v**2 * dt
-        dL_dx3 = -v**4 * dt
+        dL_dx4 = -v**2 * dt
+        dL_dx6 = -v**4 * dt
         
-        dL_dx = np.array([dL_dx0, dL_dx1, dL_dx2, dL_dx3]).reshape(1, -1)
-        dL_dx = np.hstack((dL_dx, np.zeros((1, self._full_dimension - 4))))
+        dL_dx = np.zeros((1, self._full_dimension))
+
+        dL_dx[0, 0] = dL_dx0
+        dL_dx[0, 1] = dL_dx1
+        dL_dx[0, 4] = dL_dx4
+        dL_dx[0, 6] = dL_dx6
+
+        # dL_dx = np.array([dL_dx0, dL_dx1, dL_dx2, dL_dx3]).reshape(1, -1)
+        # WRONG! WE NEED TO PAD WITH ZEROES IN THE RIGHT PLACES!
+        # This is correct if the augmented state is [x0, x1, delta1, delta2]
+        # but our augmented state is [x0, x1, ..., delta1, ..., delta2, ...]
+        # dL_dx = np.hstack((dL_dx, np.zeros((1, self._full_dimension - 4))))
+        
+        # TODO: manipulate the library better e.g, (only quadratic terms!!!)
+        # actually it was already correctly only tracking the linear and cubic damping terms
+        # womp womp, so "uncorrect" this
         return dL_dx
 
     def innovation(self, x_cal_prev, obs_prev, obs_curr, dt):

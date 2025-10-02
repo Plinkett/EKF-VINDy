@@ -171,8 +171,28 @@ class EKF:
                           x_cal_pred: np.ndarray, obs: np.ndarray, dt: float, only_x = False):
         x_cal_prev = self._states.last.x_cal
         jacobian_h = constr.jacobian(x_cal_pred, dt)
-        # porco dio devi passare tutto e lo odio, ma dovrebbe andare
-        pass
+        
+        # innovation covariance
+        s = jacobian_h @ p_uc @ jacobian_h.T + constr.R
+
+        cho, lower = cho_factor(s)
+        gain = cho_solve((cho, lower), (p_uc @ jacobian_h.T).T).T
+
+        # innovation
+        innovation = constr.innovation(x_cal_prev, self._observations[-1], obs, dt)
+        
+        # update mean and extract x and xi_tilde
+        cal_x_constr = x_cal_uc + gain @ innovation
+        x_constr = cal_x_constr[:self.n]
+        xi_tilde_constr = cal_x_constr[-self.n_tracked_terms:]
+
+        # update covariance under constraint
+        id_minus_KH = self.I - gain @ jacobian_h
+        p_constr = id_minus_KH @ p_uc @ id_minus_KH.T + gain @ constr.R @ gain.T
+        p_constr = 0.5 * (p_constr + p_constr.T)
+       
+        return x_constr, xi_tilde_constr, p_constr
+
     # def _update_constraint(self, x_uc: np.ndarray, p_uc: np.ndarray,
     #                    xi_tilde_uc: np.ndarray, constr: Constraint, observation: np.ndarray, dt: float, 
     #                    x_pred: np.ndarray, xi_pred: np.ndarray, only_x = False):
