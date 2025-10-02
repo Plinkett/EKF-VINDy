@@ -6,7 +6,7 @@ from tqdm import tqdm
 from typing import Iterable
 from scipy.linalg import cho_factor, cho_solve
 from ekf_vindy.filters.state import State, StateHistory
-from ekf_vindy.filters.constraints.constraints import Constraint
+from ekf_vindy.filters.constraints import Constraint
 from ekf_vindy.filters.config import DynamicsConfig
 from ekf_vindy.jacobian_utils import lambdified_jacobian_blocks
 from ekf_vindy.utils import integration_step
@@ -145,23 +145,12 @@ class EKF:
         
         We need many weird numerical tricks here to ensure numerical stability... especially because of the energy constraints...
         """
-
-        # Symmetrize and PSD-correct predicted covariance
-        eigvals, eigvecs = np.linalg.eigh(p_pred)
-        eigvals = np.clip(eigvals, 1e-12, None)
-        p_pred = eigvecs @ np.diag(eigvals) @ eigvecs.T
-
-        # Innovation covariance with tiny jitter
+        # Innovation covariance 
         s = self.H @ p_pred @ self.H.T + self.R
-        s += 1e-12 * np.eye(s.shape[0])
 
         # Compute Kalman gain safely
-        try:
-            cho, lower = cho_factor(s)
-            gain = cho_solve((cho, lower), (p_pred @ self.H.T).T).T
-        except np.linalg.LinAlgError:
-            # fallback to pseudo-inverse if still failing
-            gain = p_pred @ self.H.T @ np.linalg.pinv(s)
+        cho, lower = cho_factor(s)
+        gain = cho_solve((cho, lower), (p_pred @ self.H.T).T).T
 
         # Innovation
         innovation = observation - x_pred
@@ -178,65 +167,71 @@ class EKF:
 
         return x_updt, xi_tilde_updt, p_updt
     
-    def _update_constraint(self, x_uc: np.ndarray, p_uc: np.ndarray,
-                       xi_tilde_uc: np.ndarray, constr: Constraint, observation: np.ndarray, dt: float, 
-                       x_pred: np.ndarray, xi_pred: np.ndarray, only_x = False):
-        """
-        Pseudo-observation update that only corrects the dynamical system state x,
-        leaving parameters xi_tilde and their covariance untouched.
-        """
+    def update_constraint(self, x_cal_uc: np.ndarray, p_uc: np.ndarray, constr: Constraint, 
+                          x_cal_pred: np.ndarray, obs: np.ndarray, dt: float, only_x = False):
+        x_cal_prev = self._states.last.x_cal
+        jacobian_h = constr.jacobian(x_cal_pred, dt)
+        # porco dio devi passare tutto e lo odio, ma dovrebbe andare
+        pass
+    # def _update_constraint(self, x_uc: np.ndarray, p_uc: np.ndarray,
+    #                    xi_tilde_uc: np.ndarray, constr: Constraint, observation: np.ndarray, dt: float, 
+    #                    x_pred: np.ndarray, xi_pred: np.ndarray, only_x = False):
+    #     """
+    #     Pseudo-observation update that only corrects the dynamical system state x,
+    #     leaving parameters xi_tilde and their covariance untouched.
+    #     """
 
-        # energy difference estimated from current and previous observation 
-        loss_obs = constr.aux_function(observation, self.observations[-1]) 
+    #     # energy difference estimated from current and previous observation 
+    #     loss_obs = constr.aux_function(observation, self.observations[-1]) 
         
-        # predicted energy difference from model 
-        prev_state = self._states.last
-        loss_predicted = constr.innovation(prev_state.x, prev_state.xi_tilde, dt)
+    #     # predicted energy difference from model 
+    #     prev_state = self._states.last
+    #     loss_predicted = constr.innovation(prev_state.x, prev_state.xi_tilde, dt)
 
-        eigvals, eigvecs = np.linalg.eigh(p_uc)
-        eigvals = np.clip(eigvals, 1e-12, None)
-        p_uc_copy = eigvecs @ np.diag(eigvals) @ eigvecs.T
+    #     eigvals, eigvecs = np.linalg.eigh(p_uc)
+    #     eigvals = np.clip(eigvals, 1e-12, None)
+    #     p_uc_copy = eigvecs @ np.diag(eigvals) @ eigvecs.T
 
-        # h_j = constr.jacobian(x_uc)  
-        h_j = constr.jacobian(x_pred.squeeze(), xi_pred.squeeze(), dt)
+    #     # h_j = constr.jacobian(x_uc)  
+    #     h_j = constr.jacobian(x_pred.squeeze(), xi_pred.squeeze(), dt)
 
-        # --- extract state block ---
-        if only_x:
-            p_uc_copy = p_uc[:self.n, :self.n]
-            h_j = h_j[:, :self.n]
+    #     # --- extract state block ---
+    #     if only_x:
+    #         p_uc_copy = p_uc[:self.n, :self.n]
+    #         h_j = h_j[:, :self.n]
 
-        # innovation covariance
-        s = h_j @ p_uc_copy @ h_j.T + constr.R
-        s += 1e-12 * np.eye(s.shape[0])
+    #     # innovation covariance
+    #     s = h_j @ p_uc_copy @ h_j.T + constr.R
+    #     s += 1e-12 * np.eye(s.shape[0])
   
-        # Kalman gain restricted to x-block
-        try:
-            cho, lower = cho_factor(s)
-            gain = cho_solve((cho, lower), (p_uc_copy @ h_j.T).T).T
-        except np.linalg.LinAlgError:
-            gain = p_uc_copy @ h_j.T @ np.linalg.pinv(s)
+    #     # Kalman gain restricted to x-block
+    #     try:
+    #         cho, lower = cho_factor(s)
+    #         gain = cho_solve((cho, lower), (p_uc_copy @ h_j.T).T).T
+    #     except np.linalg.LinAlgError:
+    #         gain = p_uc_copy @ h_j.T @ np.linalg.pinv(s)
 
-        innovation = (loss_obs - loss_predicted).reshape(-1, 1)
-        # print(f'Innovation (constraint): {innovation.ravel()}')
-        # update whole state or only x and covariance blocks related to x
-        if only_x:
-            x_constr = x_uc + gain @ innovation 
-            xi_tilde_constr = xi_tilde_uc
-            id_minus_KH = np.eye(self.n) - gain @ h_j
-            p_xx_constr = id_minus_KH @ p_uc_copy @ id_minus_KH.T + gain @ constr.R @ gain.T
-            p_constr = p_uc.copy()
-            p_constr[:self.n, :self.n] = p_xx_constr
-        else:
-            cal_x_uc = np.vstack([x_uc, xi_tilde_uc])
-            cal_x_constr = cal_x_uc + gain @ innovation 
-            x_constr = cal_x_constr[:self.n]
-            xi_tilde_constr = cal_x_constr[-self.n_tracked_terms:]
-            id_minus_KH = self.I - gain @ h_j
-            p_constr = id_minus_KH @ p_uc_copy @ id_minus_KH.T + gain @ constr.R @ gain.T
+    #     innovation = (loss_obs - loss_predicted).reshape(-1, 1)
+    #     # print(f'Innovation (constraint): {innovation.ravel()}')
+    #     # update whole state or only x and covariance blocks related to x
+    #     if only_x:
+    #         x_constr = x_uc + gain @ innovation 
+    #         xi_tilde_constr = xi_tilde_uc
+    #         id_minus_KH = np.eye(self.n) - gain @ h_j
+    #         p_xx_constr = id_minus_KH @ p_uc_copy @ id_minus_KH.T + gain @ constr.R @ gain.T
+    #         p_constr = p_uc.copy()
+    #         p_constr[:self.n, :self.n] = p_xx_constr
+    #     else:
+    #         cal_x_uc = np.vstack([x_uc, xi_tilde_uc])
+    #         cal_x_constr = cal_x_uc + gain @ innovation 
+    #         x_constr = cal_x_constr[:self.n]
+    #         xi_tilde_constr = cal_x_constr[-self.n_tracked_terms:]
+    #         id_minus_KH = self.I - gain @ h_j
+    #         p_constr = id_minus_KH @ p_uc_copy @ id_minus_KH.T + gain @ constr.R @ gain.T
 
-        p_constr = 0.5 * (p_constr + p_constr.T)
+    #     p_constr = 0.5 * (p_constr + p_constr.T)
    
-        return x_constr, xi_tilde_constr, p_constr
+    #     return x_constr, xi_tilde_constr, p_constr
     
     def _step(self, curr_state: State, dt: float, observation: np.ndarray, constr: Constraint | None = None):
         """ Stitch prediction and update steps"""
