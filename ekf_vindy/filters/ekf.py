@@ -6,7 +6,7 @@ from tqdm import tqdm
 from typing import Iterable
 from scipy.linalg import cho_factor, cho_solve
 from ekf_vindy.filters.state import State, StateHistory
-from ekf_vindy.filters.constraints import Constraint
+from ekf_vindy.filters.constraints.constraints import Constraint
 from ekf_vindy.filters.config import DynamicsConfig
 from ekf_vindy.jacobian_utils import lambdified_jacobian_blocks
 from ekf_vindy.utils import integration_step
@@ -191,7 +191,7 @@ class EKF:
         
         # predicted energy difference from model 
         prev_state = self._states.last
-        loss_predicted = constr.constraint(prev_state.x, prev_state.xi_tilde, dt)
+        loss_predicted = constr.innovation(prev_state.x, prev_state.xi_tilde, dt)
 
         eigvals, eigvecs = np.linalg.eigh(p_uc)
         eigvals = np.clip(eigvals, 1e-12, None)

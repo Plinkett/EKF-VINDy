@@ -26,6 +26,8 @@ dependencies = [
     "pysindy (>=1.7,<2.0)",
     "seaborn (>=0.13.2,<0.14.0)",
     "tqdm (>=4.67.1,<5.0.0)",
+    "rd-spiral @ git+https://github.com/sandyherho/rd_spiral.git",
+    "numba (>=0.62.1,<0.63.0)",
 ]
 keywords = [
     "model order reduction",
