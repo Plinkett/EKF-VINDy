@@ -6,13 +6,13 @@ from matplotlib import animation
 # PARAMETERS
 # ----------------------
 Nx, Ny = 100, 100       # grid size
-dx = dy = 1.0           # spatial step
-dt = 0.01               # time step
+dx = dy = 0.5           # spatial step
+dt = 0.01             # time step
 T = 20                  # total time
 n_steps = int(T/dt)
 
 # diffusion coefficients
-d1, d2 = 5.0, 5.0
+d1, d2 = 5.0, 0.00
 
 # phase rotation
 mu = 2.0
@@ -54,13 +54,13 @@ def reaction(u, v):
 # SETUP PLOTTING
 # ----------------------
 fig, ax = plt.subplots()
-im = ax.imshow(u, cmap='inferno', vmin=-1, vmax=1, animated=True)
+im = ax.imshow(u, cmap='viridis', vmin=-1, vmax=1, animated=True)
 ax.set_title("u concentration")
 
 def update(frame):
     global u, v
     # Run a few RK4 steps per frame
-    for _ in range(1):
+    for _ in range(15):
         # RK4 for reaction only
         k1u, k1v = reaction(u, v)
         k2u, k2v = reaction(u + 0.5*dt*k1u, v + 0.5*dt*k1v)
