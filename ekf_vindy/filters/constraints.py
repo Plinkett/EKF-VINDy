@@ -16,7 +16,8 @@ class Constraint(ABC):
         self._assert_valid()
     
     @abstractmethod
-    def innovation(self, x: np.ndarray, obs_prev: np.ndarray, obs_curr: np.ndarray, dt: float):
+    def innovation(self, x_cal_prev: np.ndarray, x_cal_curr: np.ndarray, 
+                   obs_prev: np.ndarray, obs_curr: np.ndarray, dt: float):
         """ In the subclasses you will define the behaviour of this constraint, same goes for self.jacobian() and self.obs_processing """
         pass
 
@@ -57,10 +58,10 @@ class ConservationDuffingCubic(Constraint):
         Initial state (for computing the initial energy level), non augmented.
     """
     def __init__(self, alpha: float, beta: float, R: np.ndarray, x0: np.ndarray, full_dimension: int):
-        self._full_dimension = full_dimension
         self._alpha = alpha
         self._beta = beta
         self._x0 = x0
+        self._full_dimension = full_dimension
 
         super().__init__(R)
 
@@ -73,19 +74,19 @@ class ConservationDuffingCubic(Constraint):
         
         return kinetic + potential
     
-    def innovation(self, x: np.ndarray, obs_prev: np.ndarray, obs_curr: np.ndarray, dt: float):
+    def innovation(self, x_cal_prev: np.ndarray, x_cal_curr: np.ndarray, obs_prev: np.ndarray, obs_curr: np.ndarray, dt: float):
         """ Innovation, by comparing with the initial energy level, pseudo-observation is zero with very low variance (hyperameter)."""
         energy_0 = self._energy(self._x0)
-        energy_t = self._energy(x)
+        energy_t = self._energy(x_cal_curr)
         
         return np.array([energy_0 - energy_t]).reshape(-1, 1)
 
-    def jacobian(self, x: np.ndarray, dt: float):
+    def jacobian(self, x_curr: np.ndarray, dt: float):
         """
         Jacobian of the constraint with respect to the augmented state.
         """
         
-        dH_dx = np.array([self._alpha * x[0] + self._beta * x[0]**3, x[1]])
+        dH_dx = np.array([self._alpha * x_curr[0] + self._beta * x_curr[0]**3, x_curr[1]])
         dH_dx = dH_dx.reshape(1, -1)
         dH_dx = np.hstack((dH_dx, np.zeros((1, self._full_dimension - 2)))) # -2 for the non-augmented state dimension
     
@@ -94,13 +95,12 @@ class ConservationDuffingCubic(Constraint):
 class LossDuffingCubic(Constraint):
     """
     We assume the damping coefficients to be part of the augmente state, and for them to be indexed as follows:
-        x_cal[0] = position
-        x_cal[1] = velocity
-        ...
-        x_cal[4] = linear damping coeff
-        ...
-        x_cal[6] = cubic damping coeff
-
+        ``x_cal[0] = position``
+        ``x_cal[1] = velocity``
+        ``x_cal[2] = linear damping coeff``
+        ``x_cal[3] = cubic damping coeff``
+    
+    And nothing else is tracked, so the augmented state is 4-dimensional.
     And the model is (converted to first-order system):
     .. math::
         \dot{x_0} = x_1 \\
@@ -109,10 +109,10 @@ class LossDuffingCubic(Constraint):
     P.S. This is not really a pseudo-observation, nor a constraint, just a particular observation model.
     """
     def __init__(self, alpha: float, beta: float, R: np.ndarray, x0: np.ndarray, full_dimension: int):
-        self._full_dimension = full_dimension
-        self._x0 = x0
         self._alpha = alpha
         self._beta = beta
+        self._x0 = x0
+        self._full_dimension = full_dimension
 
         super().__init__(R)
 
@@ -133,33 +133,23 @@ class LossDuffingCubic(Constraint):
         For readability, we rename some variables. Also we pad the Jacobian with zeros to match the full augmented state dimension.
         """
         v = x_cal[1]
-        lin_damp = x_cal[4]
-        cubic_damp = x_cal[6]
+        lin_damp = x_cal[2]
+        cubic_damp = x_cal[3]
 
         dL_dx0 = 0.0
         dL_dx1 = -(lin_damp * 2 * v + cubic_damp * 4 * v**3) * dt
         dL_dx4 = -v**2 * dt
         dL_dx6 = -v**4 * dt
         
-        dL_dx = np.zeros((1, self._full_dimension))
-
-        dL_dx[0, 0] = dL_dx0
-        dL_dx[0, 1] = dL_dx1
-        dL_dx[0, 4] = dL_dx4
-        dL_dx[0, 6] = dL_dx6
-
-        # dL_dx = np.array([dL_dx0, dL_dx1, dL_dx2, dL_dx3]).reshape(1, -1)
-        # WRONG! WE NEED TO PAD WITH ZEROES IN THE RIGHT PLACES!
-        # This is correct if the augmented state is [x0, x1, delta1, delta2]
-        # but our augmented state is [x0, x1, ..., delta1, ..., delta2, ...]
-        # dL_dx = np.hstack((dL_dx, np.zeros((1, self._full_dimension - 4))))
+        return np.array([dL_dx0, dL_dx1, dL_dx4, dL_dx6]).reshape(1, -1)
         
         # TODO: manipulate the library better e.g, (only quadratic terms!!!)
         # actually it was already correctly only tracking the linear and cubic damping terms
         # womp womp, so "uncorrect" this
-        return dL_dx
 
-    def innovation(self, x_cal_prev, obs_prev, obs_curr, dt):
+
+    def innovation(self, x_cal_prev: np.ndarray, x_cal_curr: np.ndarray, 
+                   obs_prev: np.ndarray, obs_curr: np.ndarray, dt: float):
         """ Innovation as the loss computed from the current and previous observation. """
         loss_from_obs = self._loss_from_obs(obs_curr, obs_prev)
         

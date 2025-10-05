@@ -38,6 +38,7 @@ def _generic_labels(components: int):
 
 def plot_trajectory(x: np.ndarray, time_instants: np.ndarray, sdevs: np.ndarray | None = None,
                     state_names: List[str] | None = None, legend_fontsize: int = 16, title: str = "", x_tick_skip: int = None,
+                    ylim: tuple | None = None,
                     palette="muted", xlabel=r"$t$", ylabel=r"$y(t)$"):
     
     """
@@ -96,7 +97,8 @@ def plot_trajectory(x: np.ndarray, time_instants: np.ndarray, sdevs: np.ndarray 
     ax.spines['right'].set_visible(False)
     ax.spines['left'].set_color('black')    
     ax.spines['bottom'].set_color('black')
-
+    if ylim: 
+        ax.set_ylim(ylim)
     # grid
     ax.grid(True, which='both', linestyle='-', linewidth=0.5, color='gray', alpha=0.5)
     ax.set_axisbelow(True)
