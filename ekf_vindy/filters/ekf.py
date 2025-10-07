@@ -168,9 +168,8 @@ class EKF:
         return x_updt, xi_tilde_updt, p_updt
     
     def _update_constraint(self, x_cal_uc: np.ndarray, p_uc: np.ndarray, x_cal_pred: np.ndarray, 
-                           constr: Constraint, obs: np.ndarray, dt: float, only_non_augmented = False):
+                           constr: Constraint, obs_curr: np.ndarray, dt: float, only_non_augmented = False):
         x_cal_prev = self._states.last.x_cal
-
         jacobian_h = constr.jacobian(x_cal_pred, dt)
         p_uc_copy = p_uc.copy()
 
@@ -185,7 +184,7 @@ class EKF:
         gain = cho_solve((cho, lower), (p_uc_copy @ jacobian_h.T).T).T
 
         # innovation
-        innovation = constr.innovation(x_cal_prev, x_cal_uc, self._observations[-1], obs, dt)
+        innovation = constr.innovation(x_cal_prev, x_cal_uc, self._observations[-1], obs_curr, dt)
 
         if only_non_augmented:
             x_constr = x_cal_uc[:self.n] + gain @ innovation 
@@ -206,7 +205,7 @@ class EKF:
     
     def _step(self, curr_state: State, dt: float, observation: np.ndarray, constr: Constraint | None = None):
         """ Stitch prediction and update steps"""
-        
+    
         x_pred, p_pred = self._predict(curr_state, dt)
         x_updt, xi_tilde_updt, p_updt = self._update(x_pred, p_pred, curr_state.xi_tilde, observation)
         
