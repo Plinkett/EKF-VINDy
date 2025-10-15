@@ -18,7 +18,7 @@ u_flat = u.reshape((flat_dim, time_steps))
 v_flat = v.reshape((flat_dim, time_steps))
 
 full_uv = np.vstack((u_flat, v_flat))
-
+print(f'full_uv shape: {full_uv.shape}')
 # Full SVD
 start = time.time()
 U, S, VT = np.linalg.svd(full_uv, full_matrices=False)
