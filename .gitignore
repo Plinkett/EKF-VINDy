@@ -422,3 +422,5 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+/simulation_data
