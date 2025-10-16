@@ -73,14 +73,6 @@ def generate_simulations(T: float, dt: float, mu_values: np.ndarray,
     # Loop over mu values
     for i, mu in enumerate(tqdm(mu_values)):
         print(f"Simulating for mu = {mu}")
-
-        # # Initial conditions    
-        # u[:, :, 0] = np.tanh(beta * np.sqrt(X ** 2 + Y ** 2)) * np.cos(
-        #     m * np.angle(X + 1j * Y) - beta * (np.sqrt(X ** 2 + Y ** 2))
-        # )
-        # v[:, :, 0] = np.tanh(beta * np.sqrt(X ** 2 + Y ** 2)) * np.sin(
-        #     m * np.angle(X + 1j * Y) - beta * (np.sqrt(X ** 2 + Y ** 2))
-        # )
         u_tot[:, :, 0, i] = np.tanh(beta * np.sqrt(X ** 2 + Y ** 2)) * np.cos(
             m * np.angle(X + 1j * Y) - beta * (np.sqrt(X ** 2 + Y ** 2))
         )
