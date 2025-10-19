@@ -11,7 +11,7 @@ authors = [
 ]
 description = "AESINDy is a Python package for automated system identification of low-dimensional systems combining autoencoders and SINDy."
 readme = "README.md"
-requires-python = ">=3.11,<4"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "matplotlib>=3.10",
     "numpy>=1.26",
@@ -28,6 +28,7 @@ dependencies = [
     "tqdm (>=4.67.1,<5.0.0)",
     "rd-spiral @ git+https://github.com/sandyherho/rd_spiral.git",
     "numba (>=0.62.1,<0.63.0)",
+    "torch (>=2.9.0,<3.0.0)",
 ]
 keywords = [
     "model order reduction",
