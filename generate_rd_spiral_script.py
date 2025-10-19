@@ -73,6 +73,8 @@ def generate_simulations(T: float, dt: float, mu_values: np.ndarray,
     # Loop over mu values
     for i, mu in enumerate(tqdm(mu_values)):
         print(f"Simulating for mu = {mu}")
+
+        print('With beta = ', beta)
         u_tot[:, :, 0, i] = np.tanh(beta * np.sqrt(X ** 2 + Y ** 2)) * np.cos(
             m * np.angle(X + 1j * Y) - beta * (np.sqrt(X ** 2 + Y ** 2))
         )
@@ -104,7 +106,8 @@ def generate_simulations(T: float, dt: float, mu_values: np.ndarray,
 
     print(f'u_tot.shape: {u_tot.shape}, v_tot.shape: {v_tot.shape}')
     print("Saving data...")
-    filename = f"rd_spiral_mu_{mu_values[0]:.3f}_to_{mu_values[-1]:.3f}_d1_{d1}_d2_{d2}_m_{m}_beta_{beta}.npz"
+    # filename = f"rd_spiral_mu_{mu_values[0]:.3f}_to_{mu_values[-1]:.3f}_d1_{d1}_d2_{d2}_m_{m}_beta_{beta}.npz"
+    filename = f"rd_spiral_beta_0.8_1.0.npz"
     filepath = os.path.join("simulation_data/rd_spiral", filename)
     np.savez(filepath, u=u_tot, v=v_tot)
 
