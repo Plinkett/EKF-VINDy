@@ -49,4 +49,5 @@ class Autoencoder(nn.Module):
     def __init__(self, input_dim = 32, latent_dim = 2):
         super(Autoencoder, self).__init__()
         self.encoder = Encoder(input_dim, latent_dim)
-        
+        self.decoder = Decoder(input_dim, latent_dim)
+
