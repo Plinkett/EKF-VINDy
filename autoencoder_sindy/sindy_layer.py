@@ -17,7 +17,8 @@ TODO: Have a config class to avoid passing too much stuff
 
 class SINDyLayer(nn.Module):
 
-    def __init__(self, latent_dim: int, n_parameters: int, poly_order: int, parameter_names: List[str]):
+    def __init__(self, latent_dim: int, n_parameters: int, poly_order: int, parameter_names: List[str],
+                 big_xi_initialization = 'uniform'):
         super(SINDyLayer, self).__init__()
         self.latent_dim = latent_dim
         self.n_parameters = n_parameters
