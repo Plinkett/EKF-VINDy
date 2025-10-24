@@ -2,7 +2,7 @@
 
 import re
 from matplotlib.colors import to_rgba
-from ekf_vindy.plotting import latex_available
+from ekf.plotting import latex_available
 from typing import List
 import matplotlib.pyplot as plt
 import seaborn as sns

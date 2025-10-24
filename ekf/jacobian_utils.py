@@ -4,7 +4,7 @@ symbolic differentiation, and easy Jacobian computation for EKF.
 """
 
 from typing import List, Optional
-import ekf_vindy.utils as utils
+import ekf.utils as utils
 import sympy as sp
 import numpy as np
 

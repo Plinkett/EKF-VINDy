@@ -5,11 +5,12 @@ import numpy as np
 from tqdm import tqdm
 from typing import Iterable
 from scipy.linalg import cho_factor, cho_solve
-from ekf_vindy.filters.state import State, StateHistory
-from ekf_vindy.filters.constraints import Constraint
-from ekf_vindy.filters.config import DynamicsConfig
-from ekf_vindy.jacobian_utils import lambdified_jacobian_blocks
-from ekf_vindy.utils import integration_step
+from ekf.filters.state import State, StateHistory
+from ekf.filters.constraints import Constraint
+from ekf.filters.config import DynamicsConfig
+from ekf.jacobian_utils import lambdified_jacobian_blocks
+from ekf.ekf_callbacks import EKFCallback
+from ekf.utils import integration_step
 
 class EKF:
     """
@@ -93,15 +94,30 @@ class EKF:
         xi_tilde_0 = np.array([config.initial_coeffs[i, col] for i, row in enumerate(config.tracked_terms) for col in row])
         self._states.append(State(t0, x0, xi_tilde_0, p0))
     
-    def run_filter(self, dts: Iterable[np.ndarray], observations: Iterable[np.ndarray], constraint: Constraint | None = None):  
+    def run_filter(self, dts: Iterable[np.ndarray], 
+                   observations: Iterable[np.ndarray], 
+                   constraint: Constraint | None = None,
+                   callbacks: list[EKFCallback] | None = None):  
         """ 
         Main call to this class. We assume dt and observations to be of the same length.
         We take either the whole vector of (dt, observations) or do it in an online fashion with yield
+        Callbacks, for preprocessing observations mostly, are also passed as a list.
         """
+        
+        if callbacks is None:
+            callbacks =  []
+            
         for dt, observation in tqdm(zip(dts, observations), total=len(dts), desc="Processing"):
+            for cb in callbacks:
+                observation = cb.preprocess(observation)
+            
             previous_state = self._states.last
             state_upd = self._step(previous_state, dt, observation.reshape(-1, 1), constraint)
             self._states.append(state_upd)
+
+            for cb in callbacks:
+                cb.postprocess(state_upd)
+
 
     def _evaluate_theta(self, x: np.ndarray):
         """ 
@@ -270,24 +286,3 @@ class EKF:
     @property
     def observations(self):
         return self._observations
-    
-    def _tuning(self):
-        # Must be done at some point if covariance is not provided...
-        # May adapt Q and R at runtime?
-        # See: Adaptive Adjustment of Noise Covariance in Kalman Filter for Dynamic State Estimation by Akhlaghi et. al. (2017)
-        raise NotImplementedError
-    
-
-    # Some numerical stability tricks, not used for the moment
-    #     Clipping eigenvalues of P to ensure positive definiteness, and sometimes add a small jitter
-    #     eigvals, eigvecs = np.linalg.eigh(p_uc)
-    #     eigvals = np.clip(eigvals, 1e-12, None)
-    #     p_uc_copy = eigvecs @ np.diag(eigvals) @ eigvecs.T
-
-  
-    #     Using pseudo-inverse if S is singular
-    #     try:
-    #         cho, lower = cho_factor(s)
-    #         gain = cho_solve((cho, lower), (p_uc_copy @ h_j.T).T).T
-    #     except np.linalg.LinAlgError:
-    #         gain = p_uc_copy @ h_j.T @ np.linalg.pinv(s)
