@@ -97,26 +97,25 @@ class EKF:
     def run_filter(self, dts: Iterable[np.ndarray], 
                    observations: Iterable[np.ndarray], 
                    constraint: Constraint | None = None,
-                   callbacks: list[EKFCallback] | None = None):  
+                   callbacks: EKFCallback | None = None):  
         """ 
         Main call to this class. We assume dt and observations to be of the same length.
         We take either the whole vector of (dt, observations) or do it in an online fashion with yield
         Callbacks, for preprocessing observations mostly, are also passed as a list.
         """
-        
-        if callbacks is None:
-            callbacks =  []
-            
+    
         for dt, observation in tqdm(zip(dts, observations), total=len(dts), desc="Processing"):
-            for cb in callbacks:
-                observation = cb.preprocess(observation)
-            
+
+            if callbacks is not None:
+                observation = callbacks.preprocess(observation)
+
             previous_state = self._states.last
             state_upd = self._step(previous_state, dt, observation.reshape(-1, 1), constraint)
-            self._states.append(state_upd)
 
-            for cb in callbacks:
-                cb.postprocess(state_upd)
+            if callbacks is not None:
+                state_upd = callbacks.postprocess(state_upd)
+                
+            self._states.append(state_upd)
 
 
     def _evaluate_theta(self, x: np.ndarray):

@@ -1,0 +1,185 @@
+import numpy as np
+import os
+import argparse
+from scipy.integrate import solve_ivp
+from numpy.fft import fft2, ifft2
+from tqdm import tqdm
+"""
+Script to simulate reaction-diffusion models for spiral initial conditions. 
+The expected output is a rotating spiral in the spatial domain. 
+
+For simplicity, we are considering only one possible initial condition, however, you
+can modify the script to consider many of them (for different coupling parameters).
+"""
+
+# Define the reaction-diffusion PDE in the Fourier (kx, ky) space
+def reaction_diffusion(t: float, uvt: np.ndarray, params: dict):
+    N = params['N']
+    d1 = params['d1']
+    d2 = params['d2']
+    mu_start = params['mu_start']
+    mu_end = params['mu_end']
+    t_start = params['t_start']
+    t_end = params['t_end']
+    n = params['n']
+    K22 = params['K22']
+    
+    # Flattened Fourier coefficients of u and v
+    ut = np.reshape(uvt[:N], (n, n))
+    vt = np.reshape(uvt[N : 2 * N], (n, n))
+
+    # Inverse FFT to reconstruct real-space fields
+    u = np.real(ifft2(ut))
+    v = np.real(ifft2(vt))
+
+    # Auxiliary terms
+    u3 = u ** 3
+    v3 = v ** 3
+    u2v = (u ** 2) * v
+    uv2 = u * (v ** 2)
+
+    # Linear interpolation of mu based on time
+    if t <= t_start:
+        mu = mu_start
+    elif t >= t_end:
+        mu = mu_end
+    else:
+        mu = mu_start + (mu_end - mu_start) * (t - t_start) / (t_end - t_start)
+
+    # The actual RHS in Fourier space
+    utrhs = np.reshape((fft2(u - u3 - uv2 + mu * u2v + mu * v3)), (N, 1))
+    vtrhs = np.reshape((fft2(v - u2v - v3 - mu * u3 - mu * uv2)), (N, 1))
+    uvt_reshaped = np.reshape(uvt, (len(uvt), 1))
+
+    # Laplacian becomes just a multiplication in Fourier space
+    uvt_updated = np.squeeze(
+        np.vstack(
+            (-d1 * K22 * uvt_reshaped[:N] + utrhs, 
+             -d2 * K22 * uvt_reshaped[N:] + vtrhs)
+        )
+    )
+    return uvt_updated
+
+def generate_simulations(T: float, dt: float, mu_start: float, mu_end: float,
+                         d1: float, d2: float, m: int, t_start: float, t_end: float):
+    
+    integrator_keywords = {}
+    integrator_keywords['rtol'] = 1e-12
+    integrator_keywords['atol'] = 1e-12
+    integrator_keywords['method'] = 'RK45'  # switch to RK45 integrator
+
+    # Time array
+    t = np.linspace(0, T, int(T / dt) + 1)
+
+    # Fixed spatial domain and grid
+    L = 20
+    spatial_step = 0.4
+    n = int(L / spatial_step)
+    N = n * n
+
+    # Generate grid (skip last point due to periodicity)
+    x_uniform = np.linspace(-L / 2, L / 2, (int(L / spatial_step) + 1))
+    x = x_uniform[:n]
+    y = x_uniform[:n]
+
+    # Handle frequency domain 
+    n2 = int(n / 2)
+    kx = (2 * np.pi / L) * np.hstack((np.linspace(0, n2 - 1, n2), 
+                                  np.linspace(-n2, -1, n2)))
+    ky = kx
+    X, Y = np.meshgrid(x, y)
+    KX, KY = np.meshgrid(kx, ky)
+    K2 = KX ** 2 + KY ** 2
+    K22 = np.reshape(K2, (N, 1))
+
+    u_tot = np.zeros((len(x), len(y), len(t)))
+    v_tot = np.zeros((len(x), len(y), len(t)))
+
+    # For starting IC
+    beta = 1.1
+    
+    params = {
+        'N': N,
+        'd1': d1,
+        'd2': d2,
+        'mu_start': mu_start,
+        'mu_end': mu_end,
+        't_start': t_start,
+        't_end': t_end,
+        'n': n,
+        'K22': K22
+    }
+        
+    print(f"Simulating for mu from {mu_start} to {mu_end}...")
+    
+    # Initial condition
+    
+    u_tot[:, :, 0] = np.tanh(beta * np.sqrt(X ** 2 + Y ** 2)) * np.cos(
+        m * np.angle(X + 1j * Y) - beta * (np.sqrt(X ** 2 + Y ** 2))
+    )
+    v_tot[:, :, 0] = np.tanh(beta * np.sqrt(X ** 2 + Y ** 2)) * np.sin(
+        m * np.angle(X + 1j * Y) - beta * (np.sqrt(X ** 2 + Y ** 2))
+    )
+
+    uvt0 = np.squeeze(
+        np.hstack(
+            (np.reshape(fft2(u_tot[:, :, 0]), (1, N)),
+             np.reshape(fft2(v_tot[:, :, 0]), (1, N)))
+        )
+    )
+
+    # Time integration of discretized PDE
+    uvsol = solve_ivp(
+        reaction_diffusion, (t[0], t[-1]), y0=uvt0, t_eval=t, 
+        args=(params,), **integrator_keywords
+    )
+
+    uvsol = uvsol.y
+
+    # Reshape things and ifft back into (x, y, t) space from (kx, ky, t) space
+    for j in range(len(t)):
+        ut = np.reshape(uvsol[:N, j], (n, n))
+        vt = np.reshape(uvsol[N:, j], (n, n))
+        u_tot[:, :, j] = np.real(ifft2(ut))
+        v_tot[:, :, j] = np.real(ifft2(vt))
+
+    print(f'u_tot.shape: {u_tot.shape}, v_tot.shape: {v_tot.shape}')
+    print("Saving data...")
+
+    filename = f'rd_spiral_transient_mu_{mu_start}_to_{mu_end}_d1_{d1}_d2_{d2}_m_{m}.npz'
+    filepath = os.path.join("simulation_data/rd_spiral/transient", filename)
+    np.savez(filepath, u=u_tot, v=v_tot)
+
+def main():
+    parser = argparse.ArgumentParser(description="Simulation parameters")
+
+    parser.add_argument("--T", type=float, default=40.0,
+                        help="Total time (float), default 20")
+    parser.add_argument("--dt", type=float, default=0.05,
+                        help="Time step (float), default 0.05")
+    # Mu range
+    parser.add_argument("--mu_start", type=float, default=0.8, help="Mu starting value")
+    parser.add_argument("--mu_end", type=float, default=1.5, help="Mu ending value")
+
+    parser.add_argument("--t_start", type=float, default=10.0, help="Start time of transient")
+    parser.add_argument("--t_end", type=float, default=20.0, help="End time of transient")
+
+    parser.add_argument("--m", type=int, default=1, help="Number of spirals (int), default 1")
+    parser.add_argument("--d1", type=float, default=0.01,
+                        help="Diffusion parameter 1 (float), default 0.01")
+    parser.add_argument("--d2", type=float, default=0.01,
+                        help="Diffusion parameter 2 (float), default 0.01")
+    args = parser.parse_args()
+
+    # Create directory if it does not exist
+    if not os.path.exists("simulation_data/rd_spiral/transient"):
+        os.makedirs("simulation_data/rd_spiral/transient")
+        
+    generate_simulations(args.T, args.dt, args.mu_start, args.mu_end,
+                        args.d1, args.d2, args.m, args.t_start, args.t_end)
+
+    print('Simulation completed successfully!')
+    
+if __name__ == "__main__":
+    main()
+
