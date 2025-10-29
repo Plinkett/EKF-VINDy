@@ -22,6 +22,7 @@ class EKFCallback(ABC):
 class PODProjection(EKFCallback):
     """
     Concrete implementation of callbacks for POD modes projection.
+    We expect the pod_modes to have shape (num_states, k), where k is the number of POD modes.
     """
     
     def __init__(self, pod_modes: np.ndarray):

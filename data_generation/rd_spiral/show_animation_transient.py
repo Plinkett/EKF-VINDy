@@ -7,7 +7,7 @@ from matplotlib.animation import FuncAnimation
 
 def show_animation():
     # Load data 
-    filename = "simulation_data/rd_spiral/transient/rd_spiral_transient_mu_0.3_to_1.9_d1_0.01_d2_0.01_m_1.npz"
+    filename = "simulation_data/rd_spiral/transient/rd_spiral_transient_mu_0.7_to_1.5_d1_0.01_d2_0.01_m_1.npz"
 
     start = time.time()
     data = np.load(filename)
