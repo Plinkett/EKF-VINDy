@@ -9,7 +9,7 @@ from ekf.filters.state import State, StateHistory
 from ekf.filters.constraints import Constraint
 from ekf.filters.config import DynamicsConfig
 from ekf.jacobian_utils import lambdified_jacobian_blocks
-from ekf.ekf_callbacks import EKFCallback
+from ekf.filters.callbacks import EKFCallback
 from ekf.utils import integration_step
 
 class EKF:
