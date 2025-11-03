@@ -17,7 +17,8 @@ def rel_error(rom_solution: np.ndarray, fom_solution: np.ndarray):
     Same as abs_error, but we compute the relative error. Outputs a tensor of size time_instances. So we can see
     how this percentage (sorta) evolves over time.
     """
-    return np.abs(fom_solution - rom_solution) / np.abs(fom_solution)
+    return np.linalg.norm(fom_solution - rom_solution, axis=0) / np.linalg.norm(fom_solution, axis=0)
+    # return np.abs(fom_solution - rom_solution) / np.abs(fom_solution)
 
 
 def rd_error(rom_solution: np.ndarray, fom_solution: np.ndarray, spatial_dim: int = 50):
@@ -29,10 +30,12 @@ def rd_error(rom_solution: np.ndarray, fom_solution: np.ndarray, spatial_dim: in
     num_time_instances = abs_error.shape[1]
     domain_area = spatial_dim * spatial_dim
 
+    print(f'abs_error shape before reshaping: {abs_error.shape}')
+    print(f'domain_area: {domain_area}, num_time_instances: {num_time_instances}')
     abs_error = abs_error.reshape((2, domain_area, num_time_instances))
     error_u = abs_error[0, : ,:].reshape((spatial_dim, spatial_dim, num_time_instances))
     error_v = abs_error[1, : ,:].reshape((spatial_dim, spatial_dim, num_time_instances))
-    rel_error = rel_error(rom_solution, fom_solution)
+    relative = rel_error(rom_solution, fom_solution)
     
-    return error_u, error_v, rel_error
+    return error_u, error_v, relative
 

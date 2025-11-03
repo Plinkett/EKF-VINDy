@@ -22,7 +22,7 @@ def show_animation(mu_index: int):
 
     # We show only u
     t = np.arange(0, 40, 0.05)
-    
+
     fig, ax = plt.subplots(figsize=(5,5))
     field = u[:, :, :, mu_index]
     cax = ax.imshow(field[:, :, 0], aspect='auto', origin='lower')
@@ -47,7 +47,7 @@ def show_animation(mu_index: int):
     plt.show()
     
 if __name__ == "__main__":
-    mu_values = np.linspace(0.9, 1.2, 31)
+    mu_values = np.linspace(0.9, 1.2, 7)
     mu_values = np.round(mu_values, 3)  
     mu_dict = {val: idx for idx, val in enumerate(mu_values)}
     my_mu = 1.2
