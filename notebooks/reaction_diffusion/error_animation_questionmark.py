@@ -11,6 +11,7 @@ from ekf.filters.config import DynamicsConfig
 from ekf.plotting import plotter
 from ekf.filters import error_computation
 from matplotlib.animation import FuncAnimation
+from matplotlib.animation import FFMpegWriter
 
 seed = 29
 np.random.seed(seed)
@@ -100,6 +101,7 @@ flat_dim = u_test.shape[0] * u_test.shape[1]
 t_test_length = u_test.shape[2]
 full_uv_test = np.vstack((u_test.reshape((flat_dim, t_test_length)),
                            v_test.reshape((flat_dim, t_test_length))))
+print(f'full_uv_test shape: {full_uv_test.shape}')
 
 # Data to be fed to the filter
 z_test = (full_uv_test.T @ U[:, :top_k])  # Shape (time, modes)
@@ -144,40 +146,62 @@ coupling_terms = np.abs(coupling_terms)
 #                                  state_names=["$|\\mu_0(t)|$", "$|\\mu_1(t)|$"], palette="viridis")
 # plt.show()
 
-
-#######################
-#  Error computation  #
-#######################
-
 filter_sol = U[:, :top_k] @ filter.states.xcal_states[:, :top_k].T
-print(f'full_uv_test shape: {full_uv_test.shape}')
+filter_u = filter_sol[:2500, :].reshape(50, 50, -1)
 
-error_u, error_v, rel_error = error_computation.rd_error(filter_sol, full_uv_test[:, 1:], 50)
-rel_error = rel_error.reshape(-1, 1)
+full_uv_test = full_uv_test[:, 1:]
+u_test = full_uv_test[:2500, :].reshape(50, 50, -1)
 
-# fig, x = plotter.plot_trajectory(rel_error.reshape(-1, 1), time_instances, x_tick_skip=4, title="Relative error", xlabel='Time', ylabel='Error percentage',
-#                                  state_names=["$\\varepsilon_{\\text{rel}}(t)$"], palette="magma")
-# plt.show()
+# Compute absolute error
+error_u = np.abs(filter_u - u_test)
 
-fig, ax = plt.subplots(figsize=(5,5))
-field = error_u
-cax = ax.imshow(field[:, :, 0], aspect='auto', origin='lower')
-vmin, vmax = field.min(), field.max()
-cax.set_clim(vmin, vmax)
+# --- Setup figure ---
+fig, axes = plt.subplots(1, 2, figsize=(15, 5))
+titles = [r'True $u(x,t)$', r'Reconstructed $u(x,t)$']
+fields = [u_test, filter_u]
 
-ax.set_xlabel('x')
-ax.set_ylabel('y')
+# Choose colormaps
+cmaps = ['viridis', 'viridis']
 
-# Use ax.text instead of ax.set_title
-time_text = ax.text(0.5, 1.02, f't = {t[0]:.2f}', transform=ax.transAxes,
-                    ha='center', va='bottom', fontsize=12)
+# Shared vmin/vmax for first two, separate for error
+vmin_main = min(u_test.min(), filter_u.min())
+vmax_main = max(u_test.max(), filter_u.max())
+vmin_err, vmax_err = error_u.min(), error_u.max()
 
+caxes, colorbars = [], []
+for i, ax in enumerate(axes):
+    field = fields[i]
+    cmap = plt.get_cmap(cmaps[i])
+    if i < 2:
+        cax = ax.imshow(field[:, :, 0], cmap=cmap, origin='lower',
+                        vmin=vmin_main, vmax=vmax_main)
+    else:
+        cax = ax.imshow(field[:, :, 0], cmap=cmap, origin='lower',
+                        vmin=vmin_err, vmax=vmax_err)
+    cb = fig.colorbar(cax, ax=ax, shrink=0.8)
+    ax.set_title(titles[i], fontsize=12)
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    caxes.append(cax)
+    colorbars.append(cb)
+
+# Add a shared time text below all plots
+time_text = fig.text(0.5, 0.02, f't = {time_instances[0]:.2f}', ha='center', fontsize=12)
+
+# --- Animation update function ---
 def update(frame):
-    cax.set_data(field[:, :, frame])
-    time_text.set_text(f't = {t[frame]:.2f}')  # update the text
-    return [cax, time_text]
+    for i, cax in enumerate(caxes):
+        cax.set_data(fields[i][:, :, frame])
+    time_text.set_text(f't = {time_instances[frame]:.2f}')
+    return caxes + [time_text]
 
-# Use blit=False for safety
-anim = FuncAnimation(fig, update, frames=len(t), interval=50, blit=False)
+# --- Animate ---
+anim = FuncAnimation(fig, update, frames=len(time_instances), interval=50, blit=False)
+# plt.show()
+# --- Save ---
+writer = FFMpegWriter(fps=20, metadata=dict(artist='Me'), bitrate=1800)
+print("Saving side by side animation...")
+anim.save("side_by_side.mp4", writer=writer)
+print("Saved as side_by_side.mp4")
 
-plt.show()
+

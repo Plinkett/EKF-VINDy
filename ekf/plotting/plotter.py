@@ -37,32 +37,30 @@ def _generic_labels(components: int):
     return [r"$x_{" + f"{i}" + r"}(t)$" for i in range(components)]
 
 def plot_trajectory(x: np.ndarray, time_instants: np.ndarray, sdevs: np.ndarray | None = None,
-                    state_names: List[str] | None = None, legend_fontsize: int = 16, title: str = "", x_tick_skip: int = None,
-                    ylim: tuple | None = None,
-                    palette="muted", xlabel=r"$t$", ylabel=r"$y(t)$"):
-    
+                    state_names: List[str] | None = None, legend_fontsize: int = 16, title: str = "",
+                    x_tick_skip: int = None, ylim: tuple | None = None, 
+                    reference: np.ndarray | None = None, palette="muted",
+                    xlabel=r"$t$", ylabel=r"$y(t)$"):
     """
-    We assume that the x argument is of shape (T, n), where T are the time instances, and n is the number of dimensions.
+    We assume that x is of shape (T, n), where T are the time instances, and n is the number of dimensions.
     """
     # format title depending on LaTeX availability
     title_str = title if not latex_available else format_label(title)
 
     state_dimension = x.shape[1] 
 
-    # format labels based on LaTeX availability and handle the generic case
+    # format labels based on LaTeX availability
     if state_names:
         labels = [format_label(label) for label in state_names] if latex_available else state_names
     else:
         labels = _generic_labels(state_dimension)
     
-    # format x and y labels
     xlabel = xlabel if not latex_available else format_label(xlabel)
     ylabel = ylabel if not latex_available else format_label(ylabel)
 
     # set seaborn style
     sns.set_theme(style="whitegrid", palette="muted")
 
-    # define colors based on the number of dimensions
     colors = sns.color_palette(palette, n_colors=state_dimension) 
     
     fig, ax = plt.subplots(figsize=(10, 7))
@@ -70,16 +68,23 @@ def plot_trajectory(x: np.ndarray, time_instants: np.ndarray, sdevs: np.ndarray 
     # plot each trajectory
     for i in range(state_dimension):
         ax.plot(time_instants, x[:, i], label=labels[i], lw=2, color=colors[i])
+        
+        # add confidence intervals if provided
         if sdevs is not None:
             upper = x[:, i] + 1.96 * sdevs[:, i]
             lower = x[:, i] - 1.96 * sdevs[:, i]
             fill_color = to_rgba(colors[i], alpha=0.2)
             ax.fill_between(time_instants, lower, upper, color=fill_color)
 
-            # if you wanna display multiple, this plotting always handled like this...
-            # ax.fill_between(time_instants, lower, upper, color=colors[i], alpha=0.15, hatch='//')
-
-    # title and labels
+    # overlay reference trajectory if provided
+    if reference is not None:
+        ax.plot(
+            time_instants, reference,
+            color="red", linestyle="--", lw=2.5,
+            label="\\textrm{True value}"
+        )
+    
+    # titles and labels
     ax.set_title(title_str, fontsize=18, color='black', pad=25)
     ax.set_xlabel(xlabel, fontsize=18, weight='bold', color='black', labelpad=10)
     ax.set_ylabel(ylabel, fontsize=18, weight='bold', color='black', labelpad=10)
@@ -97,21 +102,18 @@ def plot_trajectory(x: np.ndarray, time_instants: np.ndarray, sdevs: np.ndarray 
     ax.spines['right'].set_visible(False)
     ax.spines['left'].set_color('black')    
     ax.spines['bottom'].set_color('black')
+
     if ylim: 
         ax.set_ylim(ylim)
-    # grid
+
+    # grid and background
     ax.grid(True, which='both', linestyle='-', linewidth=0.5, color='gray', alpha=0.5)
     ax.set_axisbelow(True)
+    fig.patch.set_facecolor('white')
 
-    # add legend, but if dimensions > 6 we don't show it.
+    # legend (skip if too many states)
     if state_dimension <= 6:
         ax.legend(frameon=True, fontsize=legend_fontsize, framealpha=1.0, 
                   edgecolor='black', fancybox=False)
         
-    # if sdevs is not None:
-    #     patch = mpatches.Patch(color="gray", alpha=0.3, label=cred_str)
-    #     ax.legend(handles=ax.get_legend_handles_labels()[0] + [patch])
-    # background color
-    fig.patch.set_facecolor('white')
-
     return fig, ax

@@ -127,7 +127,7 @@ def main():
     parser = argparse.ArgumentParser(description="Simulation parameters")
 
     parser.add_argument("--T", type=float, default=40.0,
-                        help="Total time (float), default 20")
+                        help="Total time (float), default 40")
     parser.add_argument("--dt", type=float, default=0.05,
                         help="Time step (float), default 0.05")
     # Mu range
@@ -144,6 +144,7 @@ def main():
     
     # Generate arrays of values
     mu_values = np.linspace(args.mu_start, args.mu_end, args.mu_points + 1)
+    print(f"Mu values: {mu_values}")
     # Create directory if it does not exist
     if not os.path.exists("simulation_data/rd_spiral"):
         os.makedirs("simulation_data/rd_spiral")
