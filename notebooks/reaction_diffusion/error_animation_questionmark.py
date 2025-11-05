@@ -23,7 +23,7 @@ np.random.seed(seed)
 
 start_t = time.time()
 
-filename = "simulation_data/rd_spiral/rd_spiral_mu_0.700_to_1.500_d1_0.01_d2_0.01_m_1_beta_1.1.npz"
+filename = "simulation_data/rd_spiral/rd_spiral_mu_0.900_to_1.100_d1_0.01_d2_0.01_m_1_beta_1.1.npz"
 data = np.load(filename)
 
 print(f"Data loaded in {time.time() - start_t:.4f} seconds.")
@@ -113,7 +113,7 @@ dts = np.diff(time_instances)
 # EKF configuration (2 POD modes + 2 parameters)
 p0 = np.diag([1e-8, 1e-8, 1e-4, 1e-4])  # Initial covariance
 q = np.diag([1e-8, 1e-8, 1e-8, 1e-8])  # Process noise covariance
-r = np.diag([1e-3, 1e-3])  # Measurement noise covariance
+r = np.diag([4e-4, 4e-4])  # Measurement noise covariance
 
 library_terms = model.get_feature_names()
 coeffs = model.coefficients()
@@ -156,52 +156,37 @@ u_test = full_uv_test[:2500, :].reshape(50, 50, -1)
 error_u = np.abs(filter_u - u_test)
 
 # --- Setup figure ---
-fig, axes = plt.subplots(1, 2, figsize=(15, 5))
-titles = [r'True $u(x,t)$', r'Reconstructed $u(x,t)$']
-fields = [u_test, filter_u]
+fig, ax = plt.subplots(figsize=(6, 5))
+axes = [ax]
 
-# Choose colormaps
-cmaps = ['viridis', 'viridis']
+titles = [r'Absolute error $u(x,t)$']
+fields = [error_u]
+cmaps = ['coolwarm']
 
-# Shared vmin/vmax for first two, separate for error
-vmin_main = min(u_test.min(), filter_u.min())
-vmax_main = max(u_test.max(), filter_u.max())
 vmin_err, vmax_err = error_u.min(), error_u.max()
 
-caxes, colorbars = [], []
+caxes = []
 for i, ax in enumerate(axes):
     field = fields[i]
     cmap = plt.get_cmap(cmaps[i])
-    if i < 2:
-        cax = ax.imshow(field[:, :, 0], cmap=cmap, origin='lower',
-                        vmin=vmin_main, vmax=vmax_main)
-    else:
-        cax = ax.imshow(field[:, :, 0], cmap=cmap, origin='lower',
-                        vmin=vmin_err, vmax=vmax_err)
-    cb = fig.colorbar(cax, ax=ax, shrink=0.8)
+    cax = ax.imshow(field[:, :, 0], cmap=cmap, origin='lower',
+                    vmin=vmin_err, vmax=vmax_err)
+    fig.colorbar(cax, ax=ax, shrink=0.8)
     ax.set_title(titles[i], fontsize=12)
     ax.set_xlabel('x')
     ax.set_ylabel('y')
     caxes.append(cax)
-    colorbars.append(cb)
 
-# Add a shared time text below all plots
 time_text = fig.text(0.5, 0.02, f't = {time_instances[0]:.2f}', ha='center', fontsize=12)
 
-# --- Animation update function ---
 def update(frame):
     for i, cax in enumerate(caxes):
         cax.set_data(fields[i][:, :, frame])
     time_text.set_text(f't = {time_instances[frame]:.2f}')
     return caxes + [time_text]
 
-# --- Animate ---
 anim = FuncAnimation(fig, update, frames=len(time_instances), interval=50, blit=False)
-# plt.show()
-# --- Save ---
 writer = FFMpegWriter(fps=20, metadata=dict(artist='Me'), bitrate=1800)
-print("Saving side by side animation...")
-anim.save("side_by_side.mp4", writer=writer)
-print("Saved as side_by_side.mp4")
-
-
+print("Saving absolute error animation...")
+anim.save("abs_error.mp4", writer=writer)
+print("✅ Saved as abs_error.mp4")
