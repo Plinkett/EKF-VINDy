@@ -7,8 +7,7 @@ from matplotlib.animation import FuncAnimation
 
 def show_animation(mu_index: int):
     # Load data 
-    filename = "simulation_data/rd_spiral/rd_spiral_mu_0.800_to_1.600_d1_0.01_d2_0.01_m_1_beta_1.1.npz"
-    #filename = "/home/carlos/simulation_data/rd_spiral/transient/rd_spiral_transient_mu_0.9_to_1.2_d1_0.01_d2_0.01_m_1.npz"
+    filename = "simulation_data/rd_spiral/rd_spiral_mu_0.900_to_1.100_d1_0.01_d2_0.01_m_1_beta_1.1.npz"
 
     start = time.time()
     data = np.load(filename)
@@ -47,10 +46,5 @@ def show_animation(mu_index: int):
     plt.show()
     
 if __name__ == "__main__":
-    mu_values = np.linspace(0.9, 1.2, 7)
-    mu_values = np.round(mu_values, 3)  
-    mu_dict = {val: idx for idx, val in enumerate(mu_values)}
-    my_mu = 1.2
-    my_mu = round(my_mu, 3)  
-
-    show_animation(mu_dict[my_mu])
+    mu_index = 5 # Change this according to the index of mu you want to visualize
+    show_animation(mu_index)

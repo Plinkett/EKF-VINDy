@@ -3,13 +3,12 @@ requires = ["setuptools >= 61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vindy"
+name = "ekfvindy"
 version = "0.1.8"
 authors = [
-  { name="Jonas Kneifl", email="jonas.kneifl@itm.uni-stuttgart.com" },
-  { name="Paolo Conti", email="paolo.conti@polimi.it" },
+  { name="Carlos Santillán", email="carlosalberto.santillan@polimi.it"},
 ]
-description = "AESINDy is a Python package for automated system identification of low-dimensional systems combining autoencoders and SINDy."
+description = "EKF-VINDy is a package for data assimilation in high-dimensional dynamical systems identified with SINDy."
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
@@ -19,16 +18,11 @@ dependencies = [
     "scipy>=1.10",
     "sympy>=1.12",
 #    "pysindy>=1.7",
-    "tensorflow>=2.18",
-    "tensorflow_model_optimization>=0.8",
-    "tf-keras>=2.18",
-    "tensorflow-probability (>=0.25.0,<0.26.0)",
     "pysindy (>=1.7,<2.0)",
     "seaborn (>=0.13.2,<0.14.0)",
     "tqdm (>=4.67.1,<5.0.0)",
-    "rd-spiral @ git+https://github.com/sandyherho/rd_spiral.git",
     "numba (>=0.62.1,<0.63.0)",
-    "torch (>=2.9.0,<3.0.0)",
+#    "torch (>=2.9.0,<3.0.0)",
 ]
 keywords = [
     "model order reduction",
@@ -38,6 +32,8 @@ keywords = [
     "variational",
     "uncertainty quantification",
     "generative modeling",
+    "data assimilation",
+    "kalman filtering",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -62,5 +58,3 @@ interfaces = [
 ipykernel = "^6.30.1"
 
 [project.urls]
-Homepage = "https://github.com/jkneifl/VENI-VINDy-VICI"
-Issues = "https://github.com/jkneifl/VENI-VINDy-VICI/issues"

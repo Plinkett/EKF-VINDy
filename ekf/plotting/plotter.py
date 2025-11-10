@@ -81,7 +81,7 @@ def plot_trajectory(x: np.ndarray, time_instants: np.ndarray, sdevs: np.ndarray 
         ax.plot(
             time_instants, reference,
             color="red", linestyle="--", lw=2.5,
-            label="\\textrm{True value}"
+            label="$\mu (t)$"
         )
     
     # titles and labels
