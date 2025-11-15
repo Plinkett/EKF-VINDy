@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from typing import List
-import autoencoder_sindy.ae_utils as util
+import aesindy.utils as util
 """
 SINDy layer that provides the standard SINDy libraries, differentiable via PyTorch.
 
