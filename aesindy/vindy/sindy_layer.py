@@ -10,6 +10,7 @@ Do you actually need that layer? After all, should it not be inside the loss? Do
 No, you define this "fake" layer that is the Theta * Xi. So let's define that.
 
 Can you recycle this in the loss? I think you can just shortcircuit this into the loss, can't you? No need to recompute it.
+We don't actually optimize with PySINDy, we just use PySINDy to get the library terms... 
 
 TODO: Add Fourier features as well...not straight forward to mix parameters (input formatting)
 TODO: Have a config class to avoid passing too much stuff
@@ -41,21 +42,34 @@ class SINDyLayer(nn.Module):
     def _initialize_SINDy_coefficients(self):
         pass
     
-    def evaluate_theta(self, z: torch.Tensor, betas: torch.Tensor):
+    def evaluate_theta(self, z: torch.Tensor, betas: torch.Tensor | None = None):
         """
-        Evaluate library terms with latents (and parameters, called "betas" here). 
-        Both z and betas are column vectors. Output tensor of the same type and device as the input.
-        """
+        Evaluate library terms with latents (and parameters, called "betas" here). We assume the batch size to be the same for both z and betas (no input verification here).
+        A single theta vector is of size (1, p), where p is the number of library terms. In general, accounting for batch size, it will be (batch_size, p).
+        Recall that p is the number of library terms.
 
-        # We momentarily call "state" the concatenation of latent variables and parameters of the dynamical systme
-        state = torch.cat([z, betas], dim = 0)
+        Parameters
+        ----------
+        z : torch.Tensor
+            Latent variables, shape (batch_size, latent_dim)
+        betas : torch.Tensor
+            Parameters of the dynamical system, shape (batch_size,  )
+        Returns
+        -------
+        theta : torch.Tensor
+            Evaluated library terms, shape (batch_size, p)
+        """
         
-        # The theta vector is of size (p, 1)
-        theta = [f(state) for f in self.lambdified_library] 
-        theta = torch.tensor(theta, dtype = z.dtype, device = z.device).reshape(-1, 1)
+        # We call "states" the concatenation of latent variables and parameters of the dynamical systme
+        if betas is None:
+            states = z
+        else:
+            states = torch.cat([z, betas], dim = 1)
+            
+        theta_list = [f(states) for f in self.lambdified_library]  # list of (batch_size,1) tensors
+        theta = torch.cat(theta_list, dim=1)  
 
         return theta
-            
         
     def forward(z: torch.Tensor):
         pass
@@ -64,6 +78,10 @@ class SINDyLayer(nn.Module):
 # For stupid tests
 if __name__ == '__main__':
     # some test for the SINDy lib
-    z = torch.tensor([2.5, 5.3, 6.1])
-    sl = SINDyLayer(latent_dim=3, n_parameters=2, poly_order=3, parameter_names=None)
-    sl.evaluate_theta(z, torch.tensor([0.4, 2.2]))
+    # z = torch.tensor([2.5, 5.3]).unsqueeze(0)
+    z = torch.tensor([[2.5, 5.3], [0.1, -3.3]])
+    betas = torch.tensor([[0.4], [0.1]])
+    sl = SINDyLayer(latent_dim=2, n_parameters=1, poly_order=2, parameter_names=None)
+    library_terms = sl.library_symbols
+    print(library_terms)
+    print(sl.evaluate_theta(z, betas))

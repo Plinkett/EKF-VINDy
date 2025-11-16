@@ -1,4 +1,5 @@
 import sympy as sp
+import torch
 import torch.nn as nn
 import pysindy as ps
 import numpy as np
@@ -19,14 +20,42 @@ def initializate_weights(module: nn.Module):
         if module.bias is not None:
             nn.init.constant_(module.bias, 0)
             
-def generate_library_torch(variables: List[str], poly_order: int): 
-    """ Generate lambdified library terms in torch """
-    
-    # Generate library in symbol format first
+def generate_library_torch(variables: List[str], poly_order: int):
+    """
+    Generate lambdified library terms compatible with PyTorch batch inputs.
+
+    Recall that the torchified lambdas are vectorized by default, so we just need to pass the right arguments.
+    Furthermore, SymPy automatically has keyword arguments when lambdifying, so we can pass a dictionary of variable values.
+
+    For example, consider a dummy f_mixed_squared = z_1^2 * z_2^2, this takes as arguments (by passing directly the dictionary)
+        f_single(
+            z_0 = tensor([1., 2., 3.]),
+            z_1 = tensor([10., 20., 30.])
+        )
+    The output shape of each term is (batch_size, 1). So each f_batch gives us a column vector.
+    """
     var_symbols, library_symbols = generate_library_symbols(variables, poly_order)
-    lamdbified_terms = [sp.lambdify([variables], term, "torch") for term in library_symbols]
+    lambdified_terms = []
+
+    for term in library_symbols:
+        # A lambda function that takes ONE state and outputs a scalar corresponding to the term
+        
+        f_single = sp.lambdify(var_symbols, term, "torch")
+        
+        # we "batchify" f_single
+        def f_batch(x_batch, f_single=f_single):
+            vals = {str(sym): x_batch[:, i] for i, sym in enumerate(var_symbols)}
+            out = f_single(**vals)
+        
+            # After unpacking dictionary, make sure the output is a tensor of shape (batch_size, 1)
+            if not isinstance(out, torch.Tensor):
+                out = torch.tensor([out] * x_batch.shape[0], dtype=x_batch.dtype, device=x_batch.device)
+
+            return out.reshape(-1, 1)
+
+        lambdified_terms.append(f_batch)
     
-    return var_symbols, library_symbols, lamdbified_terms
+    return var_symbols, library_symbols, lambdified_terms
 
 def generate_library_symbols(variables: List[str], poly_order: int): 
     """ 
