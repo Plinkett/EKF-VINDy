@@ -46,10 +46,10 @@ class SINDyLayer(nn.Module):
     p : int
         Number of library terms
     big_xi : torch.nn.Parameter
-        SINDy coefficients to be trained. Size (p, n_variables)
+        SINDy coefficients to be trained. Shape (p, n_variables)
     """
     def __init__(self, latent_dim: int, n_parameters: int, poly_order: int, parameter_names: List[str],
-                 prune_threshold = 5e-2, big_xi_initialization = 'uniform'):
+                 prune_threshold = 5e-2, big_xi_initialization = 'zeros'):
         super(SINDyLayer, self).__init__()
         self.latent_dim = latent_dim
         self.n_parameters = n_parameters
@@ -67,13 +67,18 @@ class SINDyLayer(nn.Module):
         
         # Initialize SINDy coefficients
         self.big_xi = nn.Parameter(torch.empty(self.p, self.n_variables, device=torch_config.device, dtype=torch_config.dtype))        
+        self.mask = torch.ones(self.p, self.n_variables, device=torch_config.device, dtype=torch_config.dtype)
         self._initialize_SINDy_coefficients(big_xi_initialization)
     
     def _initialize_SINDy_coefficients(self, init_scheme: str):
         if init_scheme == 'uniform':
-            nn.init.uniform_(self.big_xi, -1.0, 1.0)
+            nn.init.uniform_(self.big_xi, -0.05, 0.05)
         elif init_scheme == 'normal':
             nn.init.normal_(self.big_xi, 0.0, 1.0)
+        elif init_scheme == 'zeros':
+            nn.init.zeros_(self.big_xi)
+        elif init_scheme == 'ones':
+            nn.init.ones_(self.big_xi)
         else:
             raise ValueError("Unknown initialization scheme.")
     
@@ -108,33 +113,33 @@ class SINDyLayer(nn.Module):
     
     def _apply_mask(self):
         """
-        Implements sequential thresholding, ideally at the end of each epoch, to enforce sparsity. Build a binary mask and do an elementwise multiplication.
+        Implements sequential thresholding, ideally at the end of some epochs, to enforce sparsity. It relies on a binary mask.
         So this should be called outside the class during the training loop.
         """
-        mask = (self.big_xi.abs() >= self.prune_threshold).float()
+        self.mask = (self.big_xi.abs() >= self.prune_threshold).float()
         
         with torch.no_grad():
-            self.big_xi *= mask
+            self.big_xi *= self.mask
         
     def forward(self, z: torch.Tensor, betas: torch.Tensor | None = None):
         """
         Evaluate ODE, z and betas are of shape (batch_size, n_variables).
         Recall that big_xi is of size (p, n_variables), and _evaluate_theta outputs a shape (batch_size, n_variables). 
         """
-        return  self._evaluate_theta(z, betas) @ self.big_xi
+        return self._evaluate_theta(z, betas) @ self.big_xi
 
 
-# For stupid tests
-if __name__ == '__main__':
-    # some test for the SINDy lib
-    # z = torch.tensor([2.5, 5.3]).unsqueeze(0)
-    torch_config.setup_device_and_type()
+# # For stupid tests
+# if __name__ == '__main__':
+#     # some test for the SINDy lib
+#     # z = torch.tensor([2.5, 5.3]).unsqueeze(0)
+#     torch_config.setup_device_and_type()
     
-    z = torch.tensor([[2.5, 5.3], [0.1, -3.3]])
-    betas = torch.tensor([[0.4], [0.1]])
-    sl = SINDyLayer(latent_dim=2, n_parameters=1, poly_order=2, parameter_names=None)
-    library_terms = sl.library_symbols
-    print(library_terms)
-    print(sl._evaluate_theta(z, betas))
-    print(sl.big_xi)
-    print(sl(z, betas))
+#     z = torch.tensor([[2.5, 5.3], [0.1, -3.3]])
+#     betas = torch.tensor([[0.4], [0.1]])
+#     sl = SINDyLayer(latent_dim=2, n_parameters=1, poly_order=2, parameter_names=None)
+#     library_terms = sl.library_symbols
+#     print(library_terms)
+#     print(sl._evaluate_theta(z, betas))
+#     print(sl.big_xi)
+#     print(sl(z, betas))
