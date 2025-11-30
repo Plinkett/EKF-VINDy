@@ -1,13 +1,53 @@
 # TODO: Add the plot_phase functionality
 
 import re
-from matplotlib.colors import to_rgba
-from ekf_vindy.plotting import latex_available
-from typing import List
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
-import matplotlib.patches as mpatches
+     
+from matplotlib.colors import to_rgba
+from pyparsing import col
+from ekf_vindy.plotting import latex_available
+from typing import List
+from sympy import Symbol
+
+"""
+This code is quite ugly, and it was mostly made with AI. 
+Since it is purely plotting code, I won't bother making it cleaner.
+"""
+
+LABEL_SIZE_MAP = {
+    "small": 12,
+    "medium": 16,
+    "large": 22,
+}
+
+def sympy_to_latex_label(sym):
+    s = str(sym)
+
+    # Replace powers: z_0**2 → z_0^2
+    s = re.sub(r"\*\*(\d+)", r"^\1", s)
+
+    # Replace function names with LaTeX
+    s = s.replace("sin", r"\sin")
+    s = s.replace("cos", r"\cos")
+    s = s.replace("exp", r"\exp")
+    s = s.replace("log", r"\log")
+
+    # Replace variables starting with b -> \beta
+    s = re.sub(r"\bb(_\w+)?\b", r"\\beta", s)
+
+    # Wrap in $...$ for math mode
+    s = f"${s}$"
+
+    # Optionally wrap non-math parts in \textrm{} (similar to your format_label)
+    if latex_available:
+        return s
+    else:
+        return s.strip("$")
+
+def sympy_list_to_latex(symbols):
+    return [sympy_to_latex_label(s) for s in symbols]
 
 def format_label(label):
     """
@@ -117,3 +157,100 @@ def plot_trajectory(x: np.ndarray, time_instants: np.ndarray, sdevs: np.ndarray 
                   edgecolor='black', fancybox=False)
         
     return fig, ax
+
+def plot_pdf(
+    x: np.ndarray,
+    pdf_values: np.ndarray,
+    batch_labels: list | tuple | None = None,
+    dim_labels: list | tuple | None = None,
+    ylim: tuple | None = (0, 10),
+    palette="muted",
+    label_size="medium",    # NEW
+):
+    """
+    Plot PDFs in a grid:
+    - Rows = batch labels (variables)
+    - Columns = dim labels (library terms)
+    """
+
+    fontsize = LABEL_SIZE_MAP.get(label_size, LABEL_SIZE_MAP["medium"])
+    tick_fontsize = max(fontsize - 4, 8)
+
+    # --- Ensure (B, D, N) shape ---
+    if x.ndim == 1:
+        x = x[None, None, :]
+        pdf_values = pdf_values[None, None, :]
+    elif x.ndim == 2:
+        x = x[None, :, :]
+        pdf_values = pdf_values[None, :, :]
+
+    B, D, N = pdf_values.shape
+
+    # --- Format labels ---
+    if batch_labels is not None:
+        batch_labels_fmt = [
+            sympy_to_latex_label(b) if isinstance(b, Symbol) else format_label(str(b))
+            for b in batch_labels
+        ]
+    else:
+        batch_labels_fmt = [format_label(f"batch {b}") for b in range(B)]
+
+    if dim_labels is not None:
+        dim_labels_fmt = [
+            sympy_to_latex_label(d) if isinstance(d, Symbol) else format_label(str(d))
+            for d in dim_labels
+        ]
+    else:
+        dim_labels_fmt = [format_label(f"dim {d}") for d in range(D)]
+
+    # --- Plot theme ---
+    sns.set_theme(style="whitegrid", palette=palette)
+    colors = sns.color_palette(palette, n_colors=D)
+
+    # --- Create subplot grid ---
+    fig, axes = plt.subplots(
+        B, D,
+        figsize=(4 * D, 3 * B),
+        squeeze=False,
+        sharex=True,
+        sharey=True,
+    )
+
+    for b in range(B):
+        for d in range(D):
+
+            ax = axes[b, d]
+            color = colors[d % len(colors)]
+
+            ax.plot(x[b, d, :], pdf_values[b, d, :], lw=2, color=color)
+
+            ax.fill_between(
+                x[b, d, :], 0, pdf_values[b, d, :],
+                color=to_rgba(color, alpha=0.25)
+            )
+
+            # column titles
+            ax.set_title(dim_labels_fmt[d], fontsize=fontsize, pad=6)
+
+            # row labels (left column only)
+            if d == 0:
+                ax.set_ylabel(
+                    batch_labels_fmt[b],
+                    fontsize=fontsize,
+                    rotation=0,
+                    labelpad=35,
+                    va="center",
+                )
+
+            ax.set_ylim(ylim)
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+            ax.spines["bottom"].set_color("black")
+            ax.spines["left"].set_color("black")
+
+            ax.tick_params(axis="both", labelsize=tick_fontsize)
+            ax.grid(True, linestyle="-", linewidth=0.5, color="gray", alpha=0.5)
+            ax.set_axisbelow(True)
+
+    fig.tight_layout()
+    return fig, axes

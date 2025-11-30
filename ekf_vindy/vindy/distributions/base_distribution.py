@@ -1,7 +1,7 @@
 import torch
 from abc import ABC, abstractmethod
 
-class BaseDistribution(torch.nn.Module, ABC):
+class BaseDistribution(ABC):
     """
     Base class for probability distributions.
     """
@@ -29,7 +29,7 @@ class BaseDistribution(torch.nn.Module, ABC):
         raise NotImplementedError
         
     @abstractmethod
-    def evaluate_pdf(self, granularity = 3000):
+    def evaluate_pdf(self, granularity: int, x_range: float):
         """
         Compute discrete evaluations of the probability density function (PDF) 
         across the support of the distribution.
@@ -47,6 +47,6 @@ class BaseDistribution(torch.nn.Module, ABC):
         Notes
         -----
         This does not return a callable function, but a discretized approximation
-        of the PDF over the support of the distribution.
+        of the PDF over the support a subset of the support of the distribution.
         """
         raise NotImplementedError

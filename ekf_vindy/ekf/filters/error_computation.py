@@ -18,7 +18,6 @@ def rel_error(rom_solution: np.ndarray, fom_solution: np.ndarray):
     how this percentage (sorta) evolves over time.
     """
     return np.linalg.norm(fom_solution - rom_solution, axis=0) / np.linalg.norm(fom_solution, axis=0)
-    # return np.abs(fom_solution - rom_solution) / np.abs(fom_solution)
 
 
 def rd_error(rom_solution: np.ndarray, fom_solution: np.ndarray, spatial_dim: int = 50):

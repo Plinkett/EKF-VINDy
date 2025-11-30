@@ -1,7 +1,7 @@
 import numpy as np
 import torch
+from torch import nn
 from ekf_vindy.vindy.distributions.base_distribution import BaseDistribution
-from matplotlib.colors import to_rgba
 
 class Laplace(BaseDistribution):
     """
@@ -93,28 +93,56 @@ class Laplace(BaseDistribution):
         """
         return 2 * torch.exp(self.log_scale) ** 2
             
-    def evaluate_pdf(self, granularity=3000):
+    def evaluate_pdf(self, granularity = 3000, x_range = 10.0):
         """
         Returns PDF evaluations of shape (batch_size, dim, granularity)
+        using a shared x-grid across all batches and dimensions, centered at zero.
+
+        Returns:
+            x: np.ndarray, shape (B, D, N)
+            pdf: np.ndarray, shape (B, D, N)
         """
-        loc_np = self.loc.detach().cpu().numpy()
-        scale_np = torch.exp(self.log_scale).detach().cpu().numpy()  # scale = b
-
+        loc_np = self.loc.detach().cpu().numpy()        # shape (B, D)
+        scale_np = torch.exp(self.log_scale).detach().cpu().numpy()  # shape (B, D)
         B, D = loc_np.shape
-        x = np.linspace(-5, 5, granularity).reshape(1, 1, granularity)  # base grid
-        x = x * scale_np[:, :, None] + loc_np[:, :, None]  # broadcast to (B,D,N)
 
+        # Shared x-grid for all batches/dims, shape (N,)
+        x_base = np.linspace(-x_range, x_range, granularity)
+
+        # Broadcast x_base to shape (B, D, N)
+        x = np.broadcast_to(x_base, (B, D, granularity))
+
+        # Compute PDF with broadcasting
         pdf = (1 / (2 * scale_np[:, :, None])) * np.exp(-np.abs(x - loc_np[:, :, None]) / scale_np[:, :, None])
 
-        return pdf, x  # return both PDF and X-grid for plotting
+        return x, pdf
         
-        
-locs_1 = torch.tensor([[1.0, 2.0, 2.3], [3.0, 4.0, 2.3]])
-log_scales_1 = torch.log(torch.tensor([[0.5, 1.0, 2.3], [1.5, 2.0, 2.3]]))
-locs_2 = torch.tensor([[56.0, 22.0], [31.0, 14.0]])
-log_scales_2 = torch.log(torch.tensor([[3.5, 7.0], [2.5, 1.0]]))
-laplace_batch = Laplace(locs_1, log_scales_1)
-laplace_batch2 = Laplace(locs_2, log_scales_2)
+# locs_1 = torch.tensor([[1.0, 2.0, 2.3], [3.0, 4.0, 2.3]])
+# log_scales_1 = torch.log(torch.tensor([[0.5, 1.0, 2.3], [1.5, 2.0, 2.3]]))
+# locs_2 = torch.tensor([[56.0, 22.0], [31.0, 14.0]])
+# log_scales_2 = torch.log(torch.tensor([[3.5, 7.0], [2.5, 1.0]]))
+# laplace_batch = Laplace(locs_1, log_scales_1)
+# laplace_batch2 = Laplace(locs_2, log_scales_2)
 
-laplace_batch.plot()
+# from ekf_vindy.plotting.plotter import plot_pdf
+# import matplotlib.pyplot as plt
 
+
+# from sympy import symbols
+
+# # 3 library terms (columns)
+# z0, z1, z2 = symbols("z_0 z_1 z_2")
+# library_symbols = [z0, z1, z2]  # each term is a single SymPy symbol
+
+# # 2 batches (rows)
+# var_symbols = (z0, z1)  # matches B=2 from laplace_batch
+
+# fig, axes = plot_pdf(
+#     *laplace_batch.evaluate_pdf(),
+#     batch_labels=var_symbols,  # rows
+#     dim_labels=library_symbols,  # columns
+#     ylim=(0, 1.5),
+#     palette="magma",
+#     label_size="large"
+# )
+# plt.show()

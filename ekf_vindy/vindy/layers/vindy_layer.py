@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import numpy as np
 from ekf_vindy.vindy.distributions.laplace import Laplace
 from ekf_vindy.vindy import torch_config 
 from typing import List
@@ -33,8 +32,8 @@ class VINDyLayer(nn.Module):
             Number of library terms.
         big_xi : torch.nn.Parameter
             Trainable SINDy coefficients (shape: [p, n_variables]).
-        big_xi_scales : torch.nn.Parameter
-            Trainable scale parameters for the Laplace distributions (shape: [p, n_variables]).
+        big_xi_log_scales : torch.nn.Parameter
+            Trainable log-scale parameters for the Laplace distributions (shape: [p, n_variables]).
         big_xi_distribution : Laplace
             Laplace distribution over SINDy coefficients for variational inference.
         laplace_prior : Laplace
@@ -44,7 +43,8 @@ class VINDyLayer(nn.Module):
     """
     def __init__(self, latent_dim: int, n_parameters: int, poly_order: int, parameter_names: List[str],
                  distribution_initialization = 'uniform', prior_loc = 0.0, prior_log_scale = 0.0):
-        super(VINDyLayer, self).__init__()
+        super().__init__() 
+        
         self.latent_dim = latent_dim
         self.n_parameters = n_parameters
         self.n_variables = self.latent_dim + self.n_parameters
@@ -60,25 +60,29 @@ class VINDyLayer(nn.Module):
         
         # Initialize SINDy coefficients distributions
         self.big_xi = nn.Parameter(torch.empty(self.p, self.n_variables, device=torch_config.device, dtype=torch_config.dtype))        
-        self.big_xi_scales = nn.Parameter(torch.empty(self.p, self.n_variables, device=torch_config.device, dtype=torch_config.dtype)) 
+        self.big_xi_log_scales = nn.Parameter(torch.empty(self.p, self.n_variables, device=torch_config.device, dtype=torch_config.dtype)) 
         
+        # Initialize mask (all ones at the beginning)
         self.mask = torch.ones(self.p, self.n_variables, device=torch_config.device, dtype=torch_config.dtype)
         
+        # Initialize distributions and prior
         self._initialize_distribution(distribution_initialization)
-        self.big_xi_distribution = Laplace(self.big_xi, self.big_xi_scales)
+        self.big_xi_distribution = Laplace(self.big_xi, self.big_xi_log_scales)
         self.laplace_prior = self._build_prior(prior_loc, prior_log_scale)
     
     def _initialize_distribution(self, init_scheme: str):
-        super()._init_tensor(self.big_xi, init_scheme)
-        super()._init_tensor(self.big_xi_scales, init_scheme)
+        self._init_tensor(self.big_xi, init_scheme)
+        self._init_tensor(self.big_xi_log_scales, init_scheme)
         
-    def _build_prior(self, loc: float, log_scale: float):
+    def _build_prior(self, prior_loc: float, prior_log_scale: float):
         """
         Given the prior loc and log_scale, we instantiate a Laplace object against which we will compare during training i.e., we will 
         compute the KL divergence.
+        
+        In general, we may use different priors for each coefficient. Indeed the Laplace class accepts tensors for loc and log_scale.
         """
-        prior_loc_tensor = torch.full_like(self.big_xi, loc)
-        prior_log_scale_tensor = torch.full_like(self.big_xi_scales, log_scale)
+        prior_loc_tensor = torch.full_like(self.big_xi, prior_loc)
+        prior_log_scale_tensor = torch.full_like(self.big_xi_log_scales, prior_log_scale)
         return Laplace(prior_loc_tensor, prior_log_scale_tensor)
      
     def forward(self, z: torch.Tensor, betas: torch.Tensor | None = None):
@@ -88,6 +92,57 @@ class VINDyLayer(nn.Module):
         
         We may change this if we want to have sample-based UQ.
         """
-        theta = super()._evaluate_theta(z, betas)
+        theta = self._evaluate_theta(z, betas)
         big_xi_masked = self.big_xi * self.mask
         return theta @ big_xi_masked
+    
+    def _init_tensor(self, tensor: torch.Tensor, init_scheme: str):
+        if init_scheme == 'uniform':
+            nn.init.uniform_(tensor, -1, 1)
+        elif init_scheme == 'normal':
+            nn.init.normal_(tensor, 0.0, 1.0)
+        elif init_scheme == 'zeros':
+            nn.init.zeros_(tensor)
+        elif init_scheme == 'ones':
+            nn.init.ones_(tensor)
+        else:
+            raise ValueError("Unknown initialization scheme.")
+        
+    def _evaluate_theta(self, z: torch.Tensor, betas: torch.Tensor | None = None):
+        """
+        Evaluate library terms with latents (and parameters, called "betas" here). We assume the batch size to be the same for both z and betas (no input verification here).
+        A single theta vector is of size (1, p), where p is the number of library terms. In general, accounting for batch size, it will be (batch_size, p).
+
+        Parameters
+        ----------
+        z : torch.Tensor
+            Latent variables, shape (batch_size, latent_dim)
+        betas : torch.Tensor
+            Parameters of the dynamical system, shape (batch_size, n_parameters)
+            
+        Returns
+        -------
+        theta : torch.Tensor
+            Evaluated library terms, shape (batch_size, p)
+        """
+        
+        # We call "states" the concatenation of latent variables and parameters of the dynamical system
+        if betas is None:
+            states = z
+        else:
+            states = torch.cat([z, betas], dim = 1)
+            
+        theta_list = [f(states) for f in self.lambdified_library]  # list of (batch_size,1) tensors
+        theta = torch.cat(theta_list, dim=1)  
+
+        return theta
+    
+    def _apply_mask(self):
+        """
+        Implements sequential thresholding, ideally at the end of some epochs, to enforce sparsity. It relies on a binary mask.
+        So this should be called outside the class during the training loop.
+        """
+        self.mask = (self.big_xi.abs() >= self.prune_threshold).float()
+        
+        with torch.no_grad():
+            self.big_xi *= self.mask

@@ -37,7 +37,7 @@ class SINDyLayer(nn.Module):
         Hyperparameter to be used during training for defining the pruned SINDy coefficients (i.e., Xi matrix).
     var_names : List[str]
         Names of the variables (latent and parameters)
-    var_symbols : List[sympy.Symbol]
+    var_symbols : Tuple[sympy.Symbol]
         SymPy symbols for the variables
     library_symbols : List[sympy.Symbol]
         Symbols for the library terms
