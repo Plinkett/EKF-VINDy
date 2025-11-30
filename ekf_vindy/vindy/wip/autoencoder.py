@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from typing import List
-from aesindy.utils import initializate_weights
+from ekf_vindy.vindy.utils import initializate_weights
 
 """
 Autoencoder to be used with SINDy, unclear how to actually include the SINDy library here.

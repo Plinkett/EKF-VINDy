@@ -1,10 +1,7 @@
 import numpy as np
 import torch
-from aesindy.vindy.distributions.base_distribution import BaseDistribution
-
-
-# TODO: I think the way they meant this to work was as a Laplace representing the entire Xi matrix? 
-# not super clear...
+from ekf_vindy.vindy.distributions.base_distribution import BaseDistribution
+from matplotlib.colors import to_rgba
 
 class Laplace(BaseDistribution):
     """
@@ -12,6 +9,9 @@ class Laplace(BaseDistribution):
     as Laplace random variables, thus promoting sparsity. 
     
     Two main attributes, the loc and the scale parameter (usually denoted with "b"). The variance is 2b^2, and b is \sqrt(0.5 * Var).
+    
+    Recall that that "batch_size" and "dim" are just names. For VINDy, for example, "batch_dim" will be equal to the number of library terms "p", whereas
+    "dim" will still indicate the number of states in our dynamical system (or more in general, variables).
     
     Parameters
     ----------
@@ -22,7 +22,6 @@ class Laplace(BaseDistribution):
     """
     
     def __init__(self, loc: torch.Tensor, log_scale: torch.Tensor):
-        super().__init__()
         self._loc = loc
         self._log_scale = log_scale    
     
@@ -63,6 +62,8 @@ class Laplace(BaseDistribution):
         Output Torch scalar with KL divergence value, broadcasted if we have batches.
         If we only compare 2 distributions (batch_size = 1), then we expect both distributions to have statistics (loc, log_scale)
         of size (1, dim).
+        
+        The output of size (batch_size, 1). If used exclusively with VINDy (no VAE), then you only compare with whatever prior you are using.
         """
         loc_1 = self.loc
         loc_2 = to_compare.loc
@@ -84,7 +85,36 @@ class Laplace(BaseDistribution):
     def log_scale(self):
         return self._log_scale
     
+    @property
+    def variance(self):
+        """
+        Returns the variance of each Laplace distribution that we are holding. 
+        So the resulting tensor is of size (batch_size, dim).
+        """
+        return 2 * torch.exp(self.log_scale) ** 2
+            
+    def evaluate_pdf(self, granularity=3000):
+        """
+        Returns PDF evaluations of shape (batch_size, dim, granularity)
+        """
+        loc_np = self.loc.detach().cpu().numpy()
+        scale_np = torch.exp(self.log_scale).detach().cpu().numpy()  # scale = b
 
-locs = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
-log_scales = torch.log(torch.tensor([[0.5, 1.0], [1.5, 2.0]]))
-laplace_batch = Laplace(locs, log_scales)
+        B, D = loc_np.shape
+        x = np.linspace(-5, 5, granularity).reshape(1, 1, granularity)  # base grid
+        x = x * scale_np[:, :, None] + loc_np[:, :, None]  # broadcast to (B,D,N)
+
+        pdf = (1 / (2 * scale_np[:, :, None])) * np.exp(-np.abs(x - loc_np[:, :, None]) / scale_np[:, :, None])
+
+        return pdf, x  # return both PDF and X-grid for plotting
+        
+        
+locs_1 = torch.tensor([[1.0, 2.0, 2.3], [3.0, 4.0, 2.3]])
+log_scales_1 = torch.log(torch.tensor([[0.5, 1.0, 2.3], [1.5, 2.0, 2.3]]))
+locs_2 = torch.tensor([[56.0, 22.0], [31.0, 14.0]])
+log_scales_2 = torch.log(torch.tensor([[3.5, 7.0], [2.5, 1.0]]))
+laplace_batch = Laplace(locs_1, log_scales_1)
+laplace_batch2 = Laplace(locs_2, log_scales_2)
+
+laplace_batch.plot()
+

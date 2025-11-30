@@ -5,12 +5,12 @@ import numpy as np
 from tqdm import tqdm
 from typing import Iterable
 from scipy.linalg import cho_factor, cho_solve
-from ekf.filters.state import State, StateHistory
-from ekf.filters.constraints import Constraint
-from ekf.filters.config import DynamicsConfig
-from ekf.jacobian_utils import lambdified_jacobian_blocks
-from ekf.filters.callbacks import EKFCallback
-from ekf.utils import integration_step
+from ekf_vindy.ekf.filters.state import State, StateHistory
+from ekf_vindy.ekf.filters.constraints import Constraint
+from ekf_vindy.ekf.filters.config import DynamicsConfig
+from ekf_vindy.ekf.jacobian_utils import lambdified_jacobian_blocks
+from ekf_vindy.ekf.filters.callbacks import EKFCallback
+from ekf_vindy.ekf.utils import integration_step
 
 class EKF:
     """

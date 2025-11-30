@@ -2,7 +2,7 @@
 Simple callback blueprint for managing projecting on to POD basis for use with autoencoder.
 """
 from abc import ABC, abstractmethod
-from ekf.filters.state import State
+from ekf_vindy.ekf.filters.state import State
 import numpy as np
 
 class EKFCallback(ABC):

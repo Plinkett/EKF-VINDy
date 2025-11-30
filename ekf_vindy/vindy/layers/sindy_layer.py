@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from aesindy import torch_config 
+from ekf_vindy.vindy import torch_config 
 from typing import List
-import aesindy.utils as util
+import ekf_vindy.vindy.utils as util
 """
 SINDy Torch layer. Instead of using STLSQ (sequential thresholding least squares) we use gradient descent with L1 regularization and
 thresholding. The float threshold is a hyperparameter and attribute of the class, however, 
@@ -18,7 +18,7 @@ We don't actually optimize with PySINDy, we just use PySINDy to get the library 
 
 TODO: Add Fourier features as well...not straight forward to mix parameters (input formatting)
 TODO: Have a config class to avoid passing too much stuff
-TODO: Add mask to train certain parameters.
+TODO: Add mask to train certain parameters.4
 """
 
 class SINDyLayer(nn.Module):
@@ -68,20 +68,20 @@ class SINDyLayer(nn.Module):
         # Initialize SINDy coefficients
         self.big_xi = nn.Parameter(torch.empty(self.p, self.n_variables, device=torch_config.device, dtype=torch_config.dtype))        
         self.mask = torch.ones(self.p, self.n_variables, device=torch_config.device, dtype=torch_config.dtype)
-        self._initialize_SINDy_coefficients(big_xi_initialization)
+        self._init_tensor(self.big_xi, big_xi_initialization)
     
-    def _initialize_SINDy_coefficients(self, init_scheme: str):
+    def _init_tensor(self, tensor: torch.Tensor, init_scheme: str):
         if init_scheme == 'uniform':
-            nn.init.uniform_(self.big_xi, -0.05, 0.05)
+            nn.init.uniform_(tensor, -1, 1)
         elif init_scheme == 'normal':
-            nn.init.normal_(self.big_xi, 0.0, 1.0)
+            nn.init.normal_(tensor, 0.0, 1.0)
         elif init_scheme == 'zeros':
-            nn.init.zeros_(self.big_xi)
+            nn.init.zeros_(tensor)
         elif init_scheme == 'ones':
-            nn.init.ones_(self.big_xi)
+            nn.init.ones_(tensor)
         else:
             raise ValueError("Unknown initialization scheme.")
-    
+
     def _evaluate_theta(self, z: torch.Tensor, betas: torch.Tensor | None = None):
         """
         Evaluate library terms with latents (and parameters, called "betas" here). We assume the batch size to be the same for both z and betas (no input verification here).
@@ -124,22 +124,40 @@ class SINDyLayer(nn.Module):
     def forward(self, z: torch.Tensor, betas: torch.Tensor | None = None):
         """
         Evaluate ODE, z and betas are of shape (batch_size, n_variables).
-        Recall that big_xi is of size (p, n_variables), and _evaluate_theta outputs a shape (batch_size, n_variables). 
+        Recall that big_xi is of size (p, n_variables), and _evaluate_theta outputs a shape (batch_size, p). 
         """
-        return self._evaluate_theta(z, betas) @ self.big_xi
+        theta = self._evaluate_theta(z, betas)
+        big_xi_masked = self.big_xi * self.mask
+        return theta @ big_xi_masked
 
+    def print_model(self, include_pruned=False):
+        """
+        Print the current masked SINDy library in readable form, like:
+        (z0)' = 0.92 1 + -0.1 z0 + -1.0 z0 z1^2
 
-# # For stupid tests
-# if __name__ == '__main__':
-#     # some test for the SINDy lib
-#     # z = torch.tensor([2.5, 5.3]).unsqueeze(0)
-#     torch_config.setup_device_and_type()
-    
-#     z = torch.tensor([[2.5, 5.3], [0.1, -3.3]])
-#     betas = torch.tensor([[0.4], [0.1]])
-#     sl = SINDyLayer(latent_dim=2, n_parameters=1, poly_order=2, parameter_names=None)
-#     library_terms = sl.library_symbols
-#     print(library_terms)
-#     print(sl._evaluate_theta(z, betas))
-#     print(sl.big_xi)
-#     print(sl(z, betas))
+        Parameters
+        ----------
+        include_pruned : bool
+            If True, prints all terms, including those pruned (with zeroed weight).
+            If False, prints only non-pruned terms (mask > 0).
+        """
+        with torch.no_grad():
+            big_xi_masked = self.big_xi * self.mask
+            for var_idx, var_name in enumerate(self.var_names):
+                eq_terms = []
+                for term_idx, term in enumerate(self.library_symbols):
+                    weight = big_xi_masked[term_idx, var_idx].item()
+                    if not include_pruned and abs(weight) < 1e-12:
+                        continue
+                    
+                    # Convert sympy term to readable string
+                    term_str = str(term)
+                    # Replace ** with ^ and * with space
+                    term_str = term_str.replace('**', '^').replace('*', ' ')
+                    eq_terms.append(f"{weight:.3g} {term_str}")
+                
+                if eq_terms:
+                    eq_str = " + ".join(eq_terms)
+                else:
+                    eq_str = "0"
+                print(f"({var_name})' = {eq_str}")

@@ -2,9 +2,9 @@ import torch
 import numpy as np
 import pysindy as ps
 import matplotlib.pyplot as plt
-from ekf.plotting import plotter
-from ekf.utils import add_noise_with_snr
-from aesindy import torch_config
+from ekf_vindy.plotting import plotter
+from ekf_vindy.ekf.utils import add_noise_with_snr
+from ekf_vindy.vindy import torch_config
 from scipy.integrate import odeint
 
 seed = 29
