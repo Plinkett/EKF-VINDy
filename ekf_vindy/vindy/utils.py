@@ -5,9 +5,9 @@ import pysindy as ps
 import numpy as np
 from typing import List
 
-"""
-Utility class for autoencoders
-"""
+def add_lognormal_noise(trajectory: np.ndarray, sigma: float):
+    noise = np.random.lognormal(mean=0, sigma=sigma, size=trajectory.shape)
+    return trajectory * noise, noise
 
 def initializate_weights(module: nn.Module):
     """
