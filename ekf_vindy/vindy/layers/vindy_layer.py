@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
+import numpy as np
+import ekf_vindy.vindy.utils as util
 from ekf_vindy.vindy.distributions.laplace import Laplace
 from ekf_vindy.vindy import torch_config 
 from typing import List
-import ekf_vindy.vindy.utils as util
 
 """
 VINDy layer that implements a variational inference version of SINDy. Instead of regularizing with the L1 loss and the sequential thresholding,
@@ -42,7 +43,7 @@ class VINDyLayer(nn.Module):
             Binary mask used for pruning coefficients during training.
     """
     def __init__(self, latent_dim: int, n_parameters: int, poly_order: int, parameter_names: List[str],
-                 distribution_initialization = 'uniform', prior_loc = 0.0, prior_log_scale = 0.0):
+                 distribution_initialization = 'uniform', prior_loc = 0.0, prior_scale = 1.0):
         super().__init__() 
         
         self.latent_dim = latent_dim
@@ -68,13 +69,13 @@ class VINDyLayer(nn.Module):
         # Initialize distributions and prior
         self._initialize_distribution(distribution_initialization)
         self.big_xi_distribution = Laplace(self.big_xi, self.big_xi_log_scales)
-        self.laplace_prior = self._build_prior(prior_loc, prior_log_scale)
+        self.laplace_prior = self._build_prior(prior_loc, prior_scale)
     
     def _initialize_distribution(self, init_scheme: str):
         self._init_tensor(self.big_xi, init_scheme)
         self._init_tensor(self.big_xi_log_scales, init_scheme)
         
-    def _build_prior(self, prior_loc: float, prior_log_scale: float):
+    def _build_prior(self, prior_loc: float, prior_scale: float):
         """
         Given the prior loc and log_scale, we instantiate a Laplace object against which we will compare during training i.e., we will 
         compute the KL divergence.
@@ -82,7 +83,7 @@ class VINDyLayer(nn.Module):
         In general, we may use different priors for each coefficient. Indeed the Laplace class accepts tensors for loc and log_scale.
         """
         prior_loc_tensor = torch.full_like(self.big_xi, prior_loc)
-        prior_log_scale_tensor = torch.full_like(self.big_xi_log_scales, prior_log_scale)
+        prior_log_scale_tensor = torch.full_like(self.big_xi_log_scales, np.log(prior_scale))
         return Laplace(prior_loc_tensor, prior_log_scale_tensor)
      
     def forward(self, z: torch.Tensor, betas: torch.Tensor | None = None):
@@ -146,3 +147,5 @@ class VINDyLayer(nn.Module):
         
         with torch.no_grad():
             self.big_xi *= self.mask
+
+
