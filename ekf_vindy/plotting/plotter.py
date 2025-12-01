@@ -25,22 +25,38 @@ LABEL_SIZE_MAP = {
 def sympy_to_latex_label(sym):
     s = str(sym)
 
-    # Replace powers: z_0**2 → z_0^2
-    s = re.sub(r"\*\*(\d+)", r"^\1", s)
+    # --- Powers ** → temporary marker ---
+    s = re.sub(r"\*\*(\d+)", r"__POW__\1", s)
+    s = re.sub(r"\*\*\((.*?)\)", r"__POW__\1", s)
 
-    # Replace function names with LaTeX
+    # --- Dot notation first ---
+    # Matches base letter(s) + "dot" + optional subscript (zdot_3 → \dot{z}_3)
+    s = re.sub(
+        r"([a-zA-Z]+)dot(_\w+)?\b",
+        lambda m: r"\dot{" + m.group(1) + "}" + (m.group(2) or ""),
+        s
+    )
+
+    # --- Multiplication * → \cdot ---
+    # Only replace * not already part of LaTeX commands
+    s = re.sub(r"(?<!\\)\*", lambda m: r" \cdot ", s)
+
+    # --- Convert temporary power markers ---
+    s = re.sub(r"__POW__(\d+)", r"^{\1}", s)
+    s = re.sub(r"__POW__\((.*?)\)", r"^{\1}", s)
+
+    # --- Standard functions ---
     s = s.replace("sin", r"\sin")
     s = s.replace("cos", r"\cos")
     s = s.replace("exp", r"\exp")
     s = s.replace("log", r"\log")
 
-    # Replace variables starting with b -> \beta
+    # --- Variables starting with b → \beta ---
     s = re.sub(r"\bb(_\w+)?\b", r"\\beta", s)
 
-    # Wrap in $...$ for math mode
+    # --- Wrap in $...$ for LaTeX ---
     s = f"${s}$"
 
-    # Optionally wrap non-math parts in \textrm{} (similar to your format_label)
     if latex_available:
         return s
     else:
@@ -165,7 +181,7 @@ def plot_pdf(
     dim_labels: list | tuple | None = None,
     ylim: tuple | None = (0, 10),
     palette="muted",
-    label_size="medium",    # NEW
+    label_size="medium",
 ):
     """
     Plot PDFs in a grid:
@@ -176,7 +192,7 @@ def plot_pdf(
     fontsize = LABEL_SIZE_MAP.get(label_size, LABEL_SIZE_MAP["medium"])
     tick_fontsize = max(fontsize - 4, 8)
 
-    # --- Ensure (B, D, N) shape ---
+    # Ensure (B, D, N) shape
     if x.ndim == 1:
         x = x[None, None, :]
         pdf_values = pdf_values[None, None, :]
@@ -186,28 +202,29 @@ def plot_pdf(
 
     B, D, N = pdf_values.shape
 
-    # --- Format labels ---
+    # Format batch labels (rows)
     if batch_labels is not None:
         batch_labels_fmt = [
-            sympy_to_latex_label(b) if isinstance(b, Symbol) else format_label(str(b))
+            sympy_to_latex_label(b) if isinstance(b, Symbol) else sympy_to_latex_label(str(b))
             for b in batch_labels
         ]
     else:
-        batch_labels_fmt = [format_label(f"batch {b}") for b in range(B)]
+        batch_labels_fmt = [sympy_to_latex_label(f"batch_{b}") for b in range(B)]
 
+    # Format dim labels (columns)
     if dim_labels is not None:
         dim_labels_fmt = [
-            sympy_to_latex_label(d) if isinstance(d, Symbol) else format_label(str(d))
+            sympy_to_latex_label(d) if isinstance(d, Symbol) else sympy_to_latex_label(str(d))
             for d in dim_labels
         ]
     else:
-        dim_labels_fmt = [format_label(f"dim {d}") for d in range(D)]
+        dim_labels_fmt = [sympy_to_latex_label(f"dim_{d}") for d in range(D)]
 
-    # --- Plot theme ---
+    # Plot theme
     sns.set_theme(style="whitegrid", palette=palette)
     colors = sns.color_palette(palette, n_colors=D)
 
-    # --- Create subplot grid ---
+    # Create subplot grid
     fig, axes = plt.subplots(
         B, D,
         figsize=(4 * D, 3 * B),
@@ -218,21 +235,20 @@ def plot_pdf(
 
     for b in range(B):
         for d in range(D):
-
             ax = axes[b, d]
             color = colors[d % len(colors)]
 
             ax.plot(x[b, d, :], pdf_values[b, d, :], lw=2, color=color)
-
             ax.fill_between(
                 x[b, d, :], 0, pdf_values[b, d, :],
                 color=to_rgba(color, alpha=0.25)
             )
 
-            # column titles
-            ax.set_title(dim_labels_fmt[d], fontsize=fontsize, pad=6)
+            # Column titles (only top row)
+            if b == 0:
+                ax.set_title(dim_labels_fmt[d], fontsize=fontsize, pad=6)
 
-            # row labels (left column only)
+            # Row labels (left column only)
             if d == 0:
                 ax.set_ylabel(
                     batch_labels_fmt[b],
@@ -247,7 +263,6 @@ def plot_pdf(
             ax.spines["right"].set_visible(False)
             ax.spines["bottom"].set_color("black")
             ax.spines["left"].set_color("black")
-
             ax.tick_params(axis="both", labelsize=tick_fontsize)
             ax.grid(True, linestyle="-", linewidth=0.5, color="gray", alpha=0.5)
             ax.set_axisbelow(True)
