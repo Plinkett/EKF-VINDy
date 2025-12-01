@@ -102,7 +102,7 @@ class Laplace(BaseDistribution):
             x: np.ndarray, shape (B, D, N)
             pdf: np.ndarray, shape (B, D, N)
         """
-        loc_np = self.loc.detach().cpu().numpy()        # shape (B, D)
+        loc_np = self.loc.detach().cpu().numpy() # shape (B, D)
         scale_np = torch.exp(self.log_scale).detach().cpu().numpy()  # shape (B, D)
         B, D = loc_np.shape
 
