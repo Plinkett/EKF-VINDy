@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-from torch import nn
 from ekf_vindy.vindy.distributions.base_distribution import BaseDistribution
 
 class Laplace(BaseDistribution):
@@ -23,7 +22,7 @@ class Laplace(BaseDistribution):
     
     def __init__(self, loc: torch.Tensor, log_scale: torch.Tensor):
         self._loc = loc
-        self._log_scale = log_scale    
+        self._log_scale = log_scale
     
     def forward(self):
         """
@@ -52,18 +51,33 @@ class Laplace(BaseDistribution):
 
     def kl_divergence(self, to_compare: 'Laplace'):
         """
-        Compute KL divergence element-wise.
-        
-        Let's recall given L_1(loc_1, scale_1) and L_2(loc_2, scale_2) the KL divergence is:
-          KL(L_1, L_2) = log(scale_2 / scale_2) 
-                         + (scale_1 * {exp[- (loc_1 - loc_2) / scale_1]} + |loc_1 - loc_2| / scale_2) 
-                         - 1
+        Compute the per-dimension KL divergence between two Laplace distributions.
 
-        Output Torch scalar with KL divergence value, broadcasted if we have batches.
-        If we only compare 2 distributions (batch_size = 1), then we expect both distributions to have statistics (loc, log_scale)
-        of size (1, dim).
-        
-        The output of size (batch_size, 1). If used exclusively with VINDy (no VAE), then you only compare with whatever prior you are using.
+        For two Laplace distributions
+
+            L1 = Laplace(loc_1, scale_1)
+            L2 = Laplace(loc_2, scale_2),
+
+        the KL divergence in a single dimension has the closed-form expression:
+
+            KL(L1 || L2)
+                = log(scale_2 / scale_1)
+                + (scale_1 * exp(-|loc_1 - loc_2| / scale_1) + |loc_1 - loc_2|) / scale_2
+                - 1
+
+        This method applies the formula element-wise across all dimensions, producing
+        a tensor of shape (batch_size, dim). No summation over dimensions is performed.
+
+        Parameters
+        ----------
+        to_compare : Laplace
+            The second Laplace distribution L2.
+
+        Returns
+        -------
+        kl : torch.Tensor
+            Tensor of KL divergences with shape (batch_size, dim), containing the
+            per-dimension KL values for each distribution in the batch.
         """
         loc_1 = self.loc
         loc_2 = to_compare.loc

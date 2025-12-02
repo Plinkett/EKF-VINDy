@@ -9,6 +9,8 @@ from typing import List
 """
 VINDy layer that implements a variational inference version of SINDy. Instead of regularizing with the L1 loss and the sequential thresholding,
 we directly fit distributions at each step, via the the standard MSE loss and the KL divergence. To enforce sparsity, we rely on Laplace priors.
+
+TODO: Properly set up the mask later... 
 """
 
 class VINDyLayer(nn.Module):
@@ -43,7 +45,7 @@ class VINDyLayer(nn.Module):
             Binary mask used for pruning coefficients during training.
     """
     def __init__(self, latent_dim: int, n_parameters: int, poly_order: int, parameter_names: List[str],
-                 distribution_initialization = 'uniform', prior_loc = 0.0, prior_scale = 1.0):
+                 init_scheme_loc = 'uniform', init_scheme_log_scale = 'uniform', prior_loc = 0.0, prior_scale = 1.0):
         super().__init__() 
         
         self.latent_dim = latent_dim
@@ -67,48 +69,43 @@ class VINDyLayer(nn.Module):
         self.mask = torch.ones(self.p, self.n_variables, device=torch_config.device, dtype=torch_config.dtype)
         
         # Initialize distributions and prior
-        self._initialize_distribution(distribution_initialization)
+        self._initialize_distribution(init_scheme_loc, init_scheme_log_scale)
         self.big_xi_distribution = Laplace(self.big_xi, self.big_xi_log_scales)
-        self.laplace_prior = self._build_prior(prior_loc, prior_scale)
+        self.laplace_prior = self._build_prior(prior_loc, np.log(prior_scale))
     
-    def _initialize_distribution(self, init_scheme: str):
-        self._init_tensor(self.big_xi, init_scheme)
-        self._init_tensor(self.big_xi_log_scales, init_scheme)
+    def _initialize_distribution(self, init_scheme_loc: str, init_scheme_log_scale: str):
+        self._init_loc(scheme = init_scheme_loc)
+        self._init_log_scales(scheme = init_scheme_log_scale)  
         
-    def _build_prior(self, prior_loc: float, prior_scale: float):
+    def _build_prior(self, prior_loc: float, prior_log_scale: float):
         """
-        Given the prior loc and log_scale, we instantiate a Laplace object against which we will compare during training i.e., we will 
+        Given the prior loc and scale, we instantiate a Laplace object against which we will compare during training i.e., we will 
         compute the KL divergence.
         
         In general, we may use different priors for each coefficient. Indeed the Laplace class accepts tensors for loc and log_scale.
         """
         prior_loc_tensor = torch.full_like(self.big_xi, prior_loc)
-        prior_log_scale_tensor = torch.full_like(self.big_xi_log_scales, np.log(prior_scale))
-        return Laplace(prior_loc_tensor, prior_log_scale_tensor)
+        prior_scale_tensor = torch.full_like(self.big_xi_log_scales, prior_log_scale)
+        return Laplace(prior_loc_tensor, prior_scale_tensor)
      
-    def forward(self, z: torch.Tensor, betas: torch.Tensor | None = None):
+    def forward(self, z: torch.Tensor, betas: torch.Tensor | None = None, sample = True):
         """
-        Evaluate ODE, z and betas are of shape (batch_size, n_variables).
-        Recall that big_xi is of size (p, n_variables), and _evaluate_theta outputs a shape (batch_size, p). 
+        Evaluate ODE, z and betas are of shape (batch_size, n_variables). 
+        During training, we sample from the Laplace distribution of Xi. It is up to the user to choose how to call the network,
+        sampling or not, during inference.
         
-        We may change this if we want to have sample-based UQ.
+        Recall that big_xi is of size (p, n_variables), and _evaluate_theta outputs a shape (batch_size, p). 
         """
         theta = self._evaluate_theta(z, betas)
-        big_xi_masked = self.big_xi * self.mask
+        
+        if sample: 
+            big_xi_masked = self.big_xi_distribution.forward() * self.mask
+        else: 
+            big_xi_masked = self.big_xi * self.mask
+        
+        
         return theta @ big_xi_masked
     
-    def _init_tensor(self, tensor: torch.Tensor, init_scheme: str):
-        if init_scheme == 'uniform':
-            nn.init.uniform_(tensor, -1, 1)
-        elif init_scheme == 'normal':
-            nn.init.normal_(tensor, 0.0, 1.0)
-        elif init_scheme == 'zeros':
-            nn.init.zeros_(tensor)
-        elif init_scheme == 'ones':
-            nn.init.ones_(tensor)
-        else:
-            raise ValueError("Unknown initialization scheme.")
-        
     def _evaluate_theta(self, z: torch.Tensor, betas: torch.Tensor | None = None):
         """
         Evaluate library terms with latents (and parameters, called "betas" here). We assume the batch size to be the same for both z and betas (no input verification here).
@@ -138,14 +135,39 @@ class VINDyLayer(nn.Module):
 
         return theta
     
-    def _apply_mask(self):
-        """
-        Implements sequential thresholding, ideally at the end of some epochs, to enforce sparsity. It relies on a binary mask.
-        So this should be called outside the class during the training loop.
-        """
-        self.mask = (self.big_xi.abs() >= self.prune_threshold).float()
+    def _init_loc(self, scheme: str):
+        if scheme == 'uniform':
+            nn.init.uniform_(self.big_xi, -1, 1)
+        elif scheme == 'normal':
+            nn.init.normal_(self.big_xi, 0.0, 1.0)
+        elif scheme == 'zeros':
+            nn.init.zeros_(self.big_xi)
+        elif scheme == 'ones':
+            nn.init.ones_(self.big_xi)
+        else:
+            raise ValueError("Unknown initialization scheme.")
         
-        with torch.no_grad():
-            self.big_xi *= self.mask
+    def _init_log_scales(self, mean: float = -3.0, std: float = 0.1, scheme: str = "normal"):
+        """Initialize log-scales with a stable distribution.
+        Default = normal(mean=-3, std=0.1), which breaks symmetry and keeps scales small.
+        """
+        if scheme == 'constant':
+            self.big_xi_log_scales.data.fill_(mean)
+        elif scheme == 'normal':
+            nn.init.normal_(self.big_xi_log_scales, mean=mean, std=std)
+        elif scheme == 'uniform':
+            nn.init.uniform_(self.big_xi_log_scales, -1, 1)
+        else:
+            raise ValueError(f"Unknown log-scale init scheme: {scheme}")
+    
+    # def _apply_mask(self):
+    #     """
+    #     Implements sequential thresholding, ideally at the end of some epochs, to enforce sparsity. It relies on a binary mask.
+    #     So this should be called outside the class during the training loop.
+    #     """
+    #     self.mask = (self.big_xi.abs() >= self.prune_threshold).float()
+        
+    #     with torch.no_grad():
+    #         self.big_xi *= self.mask
 
 

@@ -94,15 +94,15 @@ def train_vindy(
             optimizer.zero_grad()
 
             # Forward pass on minibatch
-            dzdt_pred = vindy_layer(z_batch)
+            dzdt_pred = vindy_layer(z_batch, sample = True)
 
-            # Huber (or MSE) loss
+            # Huber loss
             huber = F.huber_loss(dzdt_pred, dzdt_batch, delta=1.0, reduction='mean')
 
-            # KL term (computed once per batch)
+            # KL term. Notice that this scales with the size of the library!
             kl = vindy_layer.big_xi_distribution.kl_divergence(
                 vindy_layer.laplace_prior
-            ).sum() / len(loader)
+            ).sum()
 
             # Total objective
             loss = huber_weight * huber + kl_weight * kl
