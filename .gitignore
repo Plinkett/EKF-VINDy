@@ -424,4 +424,5 @@ FodyWeavers.xsd
 *.msp
 
 /simulation_data
+/weights
 *.mp4
