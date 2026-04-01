@@ -130,33 +130,3 @@ class Laplace(BaseDistribution):
         pdf = (1 / (2 * scale_np[:, :, None])) * np.exp(-np.abs(x - loc_np[:, :, None]) / scale_np[:, :, None])
 
         return x, pdf
-        
-# locs_1 = torch.tensor([[1.0, 2.0, 2.3], [3.0, 4.0, 2.3]])
-# log_scales_1 = torch.log(torch.tensor([[0.5, 1.0, 2.3], [1.5, 2.0, 2.3]]))
-# locs_2 = torch.tensor([[56.0, 22.0], [31.0, 14.0]])
-# log_scales_2 = torch.log(torch.tensor([[3.5, 7.0], [2.5, 1.0]]))
-# laplace_batch = Laplace(locs_1, log_scales_1)
-# laplace_batch2 = Laplace(locs_2, log_scales_2)
-
-# from ekf_vindy.plotting.plotter import plot_pdf
-# import matplotlib.pyplot as plt
-
-
-# from sympy import symbols
-
-# # 3 library terms (columns)
-# z0, z1, z2 = symbols("z_0 z_1 z_2")
-# library_symbols = [z0, z1, z2]  # each term is a single SymPy symbol
-
-# # 2 batches (rows)
-# var_symbols = (z0, z1)  # matches B=2 from laplace_batch
-
-# fig, axes = plot_pdf(
-#     *laplace_batch.evaluate_pdf(),
-#     batch_labels=var_symbols,  # rows
-#     dim_labels=library_symbols,  # columns
-#     ylim=(0, 1.5),
-#     palette="magma",
-#     label_size="large"
-# )
-# plt.show()

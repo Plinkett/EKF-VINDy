@@ -5,18 +5,13 @@ from scipy.integrate import solve_ivp
 from numpy.fft import fft2, ifft2
 from tqdm import tqdm
 """
-Script to simulate reaction-diffusion models for spiral initial conditions. 
-The expected output is a rotating spiral in the spatial domain. 
-
-For simplicity, we are considering only one possible initial condition, however, you
-can modify the script to consider many of them (for different coupling parameters).
+Same as "generate_rd_spiral.py" but we have a transient in the coupling parameter mu.
 """
 
 # Define the reaction-diffusion PDE in the Fourier (kx, ky) space
 def reaction_diffusion(t: float, uvt: np.ndarray, params: dict):
     N = params['N']
-    d1 = params['d1']
-    d2 = params['d2']
+    d = params['d']
     mu_start = params['mu_start']
     mu_end = params['mu_end']
     t_start = params['t_start']
@@ -54,14 +49,14 @@ def reaction_diffusion(t: float, uvt: np.ndarray, params: dict):
     # Laplacian becomes just a multiplication in Fourier space
     uvt_updated = np.squeeze(
         np.vstack(
-            (-d1 * K22 * uvt_reshaped[:N] + utrhs, 
-             -d2 * K22 * uvt_reshaped[N:] + vtrhs)
+            (-d * K22 * uvt_reshaped[:N] + utrhs, 
+             -d * K22 * uvt_reshaped[N:] + vtrhs)
         )
     )
     return uvt_updated
 
 def generate_simulations(T: float, dt: float, mu_start: float, mu_end: float,
-                         d1: float, d2: float, m: int, t_start: float, t_end: float):
+                         d: float, m: int, t_start: float, t_end: float):
     
     integrator_keywords = {}
     integrator_keywords['rtol'] = 1e-12
@@ -100,8 +95,7 @@ def generate_simulations(T: float, dt: float, mu_start: float, mu_end: float,
     
     params = {
         'N': N,
-        'd1': d1,
-        'd2': d2,
+        'd': d,
         'mu_start': mu_start,
         'mu_end': mu_end,
         't_start': t_start,
@@ -146,7 +140,7 @@ def generate_simulations(T: float, dt: float, mu_start: float, mu_end: float,
     print(f'u_tot.shape: {u_tot.shape}, v_tot.shape: {v_tot.shape}')
     print("Saving data...")
 
-    filename = f'rd_spiral_transient_mu_{mu_start}_to_{mu_end}_d1_{d1}_d2_{d2}_m_{m}.npz'
+    filename = f'transient_mu_{mu_start}_to_{mu_end}_d_{2}_beta_{beta}_T_{T}_dt_{dt}_tstart_{t_start}_tend_{t_end}.npz'
     filepath = os.path.join("simulation_data/rd_spiral/transient", filename)
     np.savez(filepath, u=u_tot, v=v_tot)
 
@@ -157,18 +151,15 @@ def main():
                         help="Total time (float), default 20")
     parser.add_argument("--dt", type=float, default=0.05,
                         help="Time step (float), default 0.05")
-    # Mu range
-    parser.add_argument("--mu_start", type=float, default=0.8, help="Mu starting value")
-    parser.add_argument("--mu_end", type=float, default=1.5, help="Mu ending value")
+    # mu range
+    parser.add_argument("--mu_start", type=float, default=0.8, help="mu starting value")
+    parser.add_argument("--mu_end", type=float, default=1.5, help="mu ending value")
 
     parser.add_argument("--t_start", type=float, default=10.0, help="Start time of transient")
     parser.add_argument("--t_end", type=float, default=20.0, help="End time of transient")
 
     parser.add_argument("--m", type=int, default=1, help="Number of spirals (int), default 1")
-    parser.add_argument("--d1", type=float, default=0.01,
-                        help="Diffusion parameter 1 (float), default 0.01")
-    parser.add_argument("--d2", type=float, default=0.01,
-                        help="Diffusion parameter 2 (float), default 0.01")
+    parser.add_argument("--d", type=float, default=0.01, help="Diffusion parameter (float), default 0.01")
     args = parser.parse_args()
 
     # Create directory if it does not exist
@@ -176,7 +167,7 @@ def main():
         os.makedirs("simulation_data/rd_spiral/transient")
         
     generate_simulations(args.T, args.dt, args.mu_start, args.mu_end,
-                        args.d1, args.d2, args.m, args.t_start, args.t_end)
+                        args.d, args.m, args.t_start, args.t_end)
 
     print('Simulation completed successfully!')
     

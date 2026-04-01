@@ -189,4 +189,4 @@ anim = FuncAnimation(fig, update, frames=len(time_instances), interval=50, blit=
 writer = FFMpegWriter(fps=20, metadata=dict(artist='Me'), bitrate=1800)
 print("Saving absolute error animation...")
 anim.save("abs_error.mp4", writer=writer)
-print("✅ Saved as abs_error.mp4")
+print("Saved as abs_error.mp4")

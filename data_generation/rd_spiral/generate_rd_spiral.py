@@ -8,13 +8,15 @@ from tqdm import tqdm
 Script to simulate reaction-diffusion models for spiral initial conditions. 
 The expected output is a rotating spiral in the spatial domain. 
 
+We use the strong form of the PDE, and solve it via a spectral method + method of lines.
+
 For simplicity, we are considering only one possible initial condition, however, you
-can modify the script to consider many of them (for different coupling parameters).
+can modify the script to consider many of them, or for different coupling parameters.
 """
 
 # Define the reaction-diffusion PDE in the Fourier (kx, ky) space
 def reaction_diffusion(t: float, uvt: np.ndarray, K22: np.ndarray, 
-                       d1: float, d2: float, mu: float, n: int, N: int):
+                       d: float, mu: float, n: int, N: int):
     
     # Flattened Fourier coefficients of u and v
     ut = np.reshape(uvt[:N], (n, n))
@@ -38,14 +40,14 @@ def reaction_diffusion(t: float, uvt: np.ndarray, K22: np.ndarray,
     # Laplacian becomes just a multiplication in Fourier space
     uvt_updated = np.squeeze(
         np.vstack(
-            (-d1 * K22 * uvt_reshaped[:N] + utrhs, 
-             -d2 * K22 * uvt_reshaped[N:] + vtrhs)
+            (-d * K22 * uvt_reshaped[:N] + utrhs, 
+             -d * K22 * uvt_reshaped[N:] + vtrhs)
         )
     )
     return uvt_updated
 
 def generate_simulations(T: float, dt: float, mu_values: np.ndarray,
-                         d1: float, d2: float, m: int):
+                         d: float, m: int):
     integrator_keywords = {}
     integrator_keywords['rtol'] = 1e-12
     integrator_keywords['atol'] = 1e-12
@@ -104,7 +106,7 @@ def generate_simulations(T: float, dt: float, mu_values: np.ndarray,
         # Time integration of discretized PDE
         uvsol = solve_ivp(
             reaction_diffusion, (t[0], t[-1]), y0=uvt0, t_eval=t, 
-            args=(K22, d1, d2, mu, n, N), **integrator_keywords
+            args=(K22, d, mu, n, N), **integrator_keywords
         )
 
         uvsol = uvsol.y
@@ -119,11 +121,16 @@ def generate_simulations(T: float, dt: float, mu_values: np.ndarray,
     print(f'u_tot.shape: {u_tot.shape}, v_tot.shape: {v_tot.shape}')
     print("Saving data...")
     
-    filename = f"rd_spiral_mu_{mu_values[0]:.3f}_to_{mu_values[-1]:.3f}_d1_{d1}_d2_{d2}_m_{m}_beta_{beta}.npz"
+    filename = f"mu_{mu_values[0]:.3f}_to_{mu_values[-1]:.3f}_d_{d}_m_{m}_beta_{beta}_T_{T}_dt_{dt}.npz"
     filepath = os.path.join("simulation_data/rd_spiral", filename)
     np.savez(filepath, u=u_tot, v=v_tot)
 
 def main():
+    """
+    We choose the mu parameters for which we desire to run simulations.
+    The idea is to change the diffusion parameters as well... (better if they are the same for both compounds), so d_1 = d_2.
+    """
+    
     parser = argparse.ArgumentParser(description="Simulation parameters")
 
     parser.add_argument("--T", type=float, default=40.0,
@@ -136,20 +143,20 @@ def main():
     parser.add_argument("--mu_points", type=int, default=2, help="Number of points in mu range")
     
     parser.add_argument("--m", type=int, default=1, help="Number of spirals (int), default 1")
-    parser.add_argument("--d1", type=float, default=0.01,
-                        help="Diffusion parameter 1 (float), default 0.01")
-    parser.add_argument("--d2", type=float, default=0.01,
-                        help="Diffusion parameter 2 (float), default 0.01")
+    parser.add_argument("--d", type=float, default=0.01,
+                        help="Diffusion parameter (float), default 0.01")
     args = parser.parse_args()
     
     # Generate arrays of values
-    mu_values = np.linspace(args.mu_start, args.mu_end, args.mu_points + 1)
+    
+    mu_values = np.linspace(args.mu_start, args.mu_end, args.mu_points)
     print(f"Mu values: {mu_values}")
+    
     # Create directory if it does not exist
     if not os.path.exists("simulation_data/rd_spiral"):
         os.makedirs("simulation_data/rd_spiral")
 
-    generate_simulations(args.T, args.dt, mu_values, args.d1, args.d2, args.m)
+    generate_simulations(args.T, args.dt, mu_values, args.d, args.m)
 
 if __name__ == "__main__":
     main()

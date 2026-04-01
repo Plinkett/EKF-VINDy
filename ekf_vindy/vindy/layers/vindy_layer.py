@@ -9,8 +9,6 @@ from typing import List
 """
 VINDy layer that implements a variational inference version of SINDy. Instead of regularizing with the L1 loss and the sequential thresholding,
 we directly fit distributions at each step, via the the standard MSE loss and the KL divergence. To enforce sparsity, we rely on Laplace priors.
-
-TODO: Properly set up the mask later... 
 """
 
 class VINDyLayer(nn.Module):
@@ -66,7 +64,7 @@ class VINDyLayer(nn.Module):
         self.big_xi_log_scales = nn.Parameter(torch.empty(self.p, self.n_variables, device=torch_config.device, dtype=torch_config.dtype)) 
         
         # Initialize mask (all ones at the beginning)
-        self.mask = torch.ones(self.p, self.n_variables, device=torch_config.device, dtype=torch_config.dtype)
+        self.mask = torch.ones(self.p, self.n_variables, device=torch_config.device, dtype=torch_config.dtype, requires_grad=False)
         
         # Initialize distributions and prior
         self._initialize_distribution(init_scheme_loc, init_scheme_log_scale)
@@ -77,17 +75,47 @@ class VINDyLayer(nn.Module):
         self._init_loc(scheme = init_scheme_loc)
         self._init_log_scales(scheme = init_scheme_log_scale)  
         
-    def _build_prior(self, prior_loc: float, prior_log_scale: float):
+    def pdf_thresholding(self, threshold: float = 5.0):
         """
-        Given the prior loc and scale, we instantiate a Laplace object against which we will compare during training i.e., we will 
-        compute the KL divergence.
+        Zero out coefficients whose Laplace PDF at zero exceeds the threshold.
+        Updates self.mask in-place and prints which coefficients were pruned.
+        """
+        loc = self.big_xi.detach()
+        scale = torch.exp(self.big_xi_log_scales.detach())
         
-        In general, we may use different priors for each coefficient. Indeed the Laplace class accepts tensors for loc and log_scale.
+        # PDF at zero
+        pdf_at_zero = (1 / (2 * scale)) * torch.exp(-torch.abs(loc) / scale)
+        
+        # Create mask
+        mask = (pdf_at_zero <= threshold).float()
+    
+        # Update mask
+        self.mask = mask
+        
+    def print_mean_system(self, masked = True):
         """
-        prior_loc_tensor = torch.full_like(self.big_xi, prior_loc)
-        prior_scale_tensor = torch.full_like(self.big_xi_log_scales, prior_log_scale)
-        return Laplace(prior_loc_tensor, prior_scale_tensor)
-     
+        Print the mean SINDy system.
+        If masked=True, only print non-pruned terms.
+        If masked=False, print the full (unpruned) system.
+        """
+        with torch.no_grad():
+            xi = self.big_xi.cpu()
+            mask = self.mask.cpu() if masked else None
+
+            for var_idx, var_name in enumerate(self.var_names):
+                eq_terms = []
+
+                for term_idx, term in enumerate(self.library_symbols):
+                    if masked and mask[term_idx, var_idx] == 0:
+                        continue
+
+                    weight = xi[term_idx, var_idx].item()
+                    term_str = str(term).replace("**", "^").replace("*", " ")
+                    eq_terms.append(f"{weight:.3g} {term_str}")
+
+                eq_str = " + ".join(eq_terms) if eq_terms else "0"
+                print(f"({var_name})' = {eq_str}")
+
     def forward(self, z: torch.Tensor, betas: torch.Tensor | None = None, sample = True):
         """
         Evaluate ODE, z and betas are of shape (batch_size, n_variables). 
@@ -105,6 +133,18 @@ class VINDyLayer(nn.Module):
         
         
         return theta @ big_xi_masked
+
+    def _build_prior(self, prior_loc: float, prior_log_scale: float):
+        """
+        Given the prior loc and scale, we instantiate a Laplace object against which we will compare during training i.e., we will 
+        compute the KL divergence.
+        
+        In general, we may use different priors for each coefficient. Indeed the Laplace class accepts tensors for loc and log_scale.
+        """
+        prior_loc_tensor = torch.full_like(self.big_xi, prior_loc)
+        prior_scale_tensor = torch.full_like(self.big_xi_log_scales, prior_log_scale)
+        return Laplace(prior_loc_tensor, prior_scale_tensor)
+     
     
     def _evaluate_theta(self, z: torch.Tensor, betas: torch.Tensor | None = None):
         """
@@ -159,15 +199,31 @@ class VINDyLayer(nn.Module):
             nn.init.uniform_(self.big_xi_log_scales, -1, 1)
         else:
             raise ValueError(f"Unknown log-scale init scheme: {scheme}")
-    
-    # def _apply_mask(self):
-    #     """
-    #     Implements sequential thresholding, ideally at the end of some epochs, to enforce sparsity. It relies on a binary mask.
-    #     So this should be called outside the class during the training loop.
-    #     """
-    #     self.mask = (self.big_xi.abs() >= self.prune_threshold).float()
         
-    #     with torch.no_grad():
-    #         self.big_xi *= self.mask
+    """
+    The following are just helper functions for easily obtaining the library terms and variabels as strings, or
+    for example, getting the mean coefficients in NumPy format.
+    """
+    
+    def get_mean_coefficients(self, masked: bool) -> np.ndarray:
+        with torch.no_grad():
+            coeffs = self.big_xi.cpu().numpy()
+            if masked:
+                coeffs = coeffs * self.mask.cpu().numpy()
+        return coeffs
+    
+    def get_scales(self, masked = False) -> np.ndarray:
+        with torch.no_grad():
+            scales = np.exp(self.big_xi_log_scales.cpu().numpy())
+            if masked:
+                scales = scales * self.mask.cpu().numpy()
+        return scales
+    
+    def get_feature_names(self):
+        return [str(s) for s in self.library_symbols]
 
-
+    def coefficients(self, masked = True):
+        return self.get_mean_coefficients(masked).T
+    
+    def get_variable_names(self):
+        return self.var_names.copy()

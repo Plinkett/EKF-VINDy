@@ -5,15 +5,15 @@ import numpy as np
 import pysindy as ps
 import matplotlib.pyplot as plt
 from scipy.sparse.linalg import svds
-from ekf.plotting import plotter
-from ekf.utils import add_noise_with_snr
-from ekf.filters.config import DynamicsConfig
-from ekf.filters.ekf import EKF
+from ekf_vindy.plotting import plotter
+from ekf_vindy.ekf.utils import add_noise_with_snr
+from ekf_vindy.ekf.filters.config import DynamicsConfig
+from ekf_vindy.ekf.filters.ekf import EKF
 from scipy.integrate import odeint
 from matplotlib.animation import FuncAnimation
 from IPython.display import HTML
 from IPython.display import Video
-from ekf.filters import error_computation
+from ekf_vindy.ekf.filters import error_computation
 
 
 seed = 29

@@ -1,50 +1,46 @@
-# Show spiral animation from generated data
-
 import numpy as np
 import time
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 
 def show_animation(mu_index: int):
-    # Load data 
-    filename = "simulation_data/rd_spiral/rd_spiral_mu_0.900_to_1.100_d1_0.01_d2_0.01_m_1_beta_1.1.npz"
-
+    # Load data
+    filename = "simulation_data/rd_spiral/mu_1.000_to_1.100_d_0.01_m_2_beta_1.1_T_10.0_dt_0.05.npz"
     start = time.time()
     data = np.load(filename)
     end = time.time()
     print(f"Data loading time: {end - start:.4f} seconds")
 
     u = data["u"][:, :, :-1, :]
-    v = data["v"][:, :, :-1, :]
-    
-    print(f'u shape: {u.shape}, v shape: {v.shape}')
+    print(f'u shape: {u.shape}')
 
-    # We show only u
-    t = np.arange(0, 40, 0.05)
+    # Use only u
+    field = u[:, :, :, mu_index]
+    frames = field.shape[2]
+    t = np.linspace(0, 10, frames)
 
     fig, ax = plt.subplots(figsize=(5,5))
-    field = u[:, :, :, mu_index]
     cax = ax.imshow(field[:, :, 0], aspect='auto', origin='lower')
-    vmin, vmax = field.min(), field.max()
-    cax.set_clim(vmin, vmax)
+    cax.set_clim(field.min(), field.max())
 
     ax.set_xlabel('x')
     ax.set_ylabel('y')
 
-    # Use ax.text instead of ax.set_title
     time_text = ax.text(0.5, 1.02, f't = {t[0]:.2f}', transform=ax.transAxes,
                         ha='center', va='bottom', fontsize=12)
 
     def update(frame):
         cax.set_data(field[:, :, frame])
-        time_text.set_text(f't = {t[frame]:.2f}')  # update the text
+        time_text.set_text(f't = {t[frame]:.2f}')
         return [cax, time_text]
 
-    # Use blit=False for safety
-    anim = FuncAnimation(fig, update, frames=len(t), interval=50, blit=False)
+    # Create animation
+    anim = FuncAnimation(fig, update, frames=frames, interval=50, blit=False)
 
-    plt.show()
+    # Save as MP4
+    anim.save("spiral.mp4", writer="ffmpeg", fps=20, dpi=200)
+    print("Animation saved as spiral.mp4")
     
 if __name__ == "__main__":
-    mu_index = 5 # Change this according to the index of mu you want to visualize
+    mu_index = 1 # Change this according to the mu_i you want to visualize
     show_animation(mu_index)

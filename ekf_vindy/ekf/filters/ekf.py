@@ -1,5 +1,4 @@
 # TODO: Once you verify it works make things private
-# TODO: You could work with the square root (and make it more robust) if you properly discretize the Lyapunov equation (Van-Loan formula)
 
 import numpy as np
 from tqdm import tqdm
@@ -76,7 +75,7 @@ class EKF:
         """
         self.tracked_terms = [[{col: i for i, col in enumerate(self.terms_of_interest)}[col] for col in row] for row in config.tracked_terms]
         self.coeffs = config.initial_coeffs[:, self.terms_of_interest] 
-
+        
         """ 
         we have a vector of the lambdified library terms "of interest", indices therefore correspond to compressed system
         we can use the same indices to access the tracked terms, they all indicate the same term in the sparse library 

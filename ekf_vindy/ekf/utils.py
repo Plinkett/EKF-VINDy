@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Callable
+from typing import Callable, List
 
 def non_zero_columns(coeffs: np.ndarray, tol=1e-12):
     """
@@ -42,3 +42,26 @@ def integration_step(y: np.ndarray, f: Callable, dt: float, method='Euler'):
     else:
         raise ValueError("Integration method not supported: " + str(method))
     return y_new
+
+def extract_tracked_entries(matrix: np.ndarray, tracked_terms: List[List[int]]) -> np.ndarray:
+    """
+    Receives a matrix of Gaussian variances (transformed from the Laplace posterior scales) and extracts the variances according to tracked_terms,
+    the mechanism is the same as the one we use to track the coefficients in the EKF class. 
+    
+    Returns a single vector with all the variances, which will then be part of the diagonal prior covariance matrix.
+    """
+    values = []
+    for i, row in enumerate(tracked_terms):
+        for col in row:
+            values.append(matrix[i, col])
+    return np.asarray(values)
+
+def scale_to_var_optimal(scales: np.ndarray):
+    """
+    We take a matrix of scales from the Laplace posteriors, and we compute the variance of the
+    Gaussians that minimize the KL divergence w.r.t. such Laplace (jointly with the mean). 
+    
+    The optimal variance (in the KL sense) is 2 * loc^2 / pi.
+    """
+    variances = 2 * scales ** 2 / np.pi 
+    return variances.T

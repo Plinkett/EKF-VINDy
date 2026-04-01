@@ -26,7 +26,7 @@ def train_vindy(
 
             optimizer.zero_grad()
 
-            # Forward pass on minibatch
+            # Forward pass on minibatch. During training you sample.
             dzdt_pred = vindy_layer(z_batch, sample = True)
 
             # Huber loss

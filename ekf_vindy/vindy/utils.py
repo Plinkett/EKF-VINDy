@@ -5,6 +5,35 @@ import pysindy as ps
 import numpy as np
 from typing import List
 
+def save_vindy_weights(vindy_layer, path_prefix: str):
+    """
+    Save VINDy weights in both PyTorch and NumPy formats.
+    """
+    # PyTorch checkpoint
+    torch.save({
+        "big_xi": vindy_layer.big_xi.detach().cpu(),
+        "big_xi_log_scales": vindy_layer.big_xi_log_scales.detach().cpu(),
+        "mask": vindy_layer.mask.detach().cpu()
+    }, f"{path_prefix}.pt")
+    
+    # NumPy export
+    xi_mean = vindy_layer.big_xi.detach().cpu().numpy()
+    xi_log_scale = vindy_layer.big_xi_log_scales.detach().cpu().numpy()
+    mask = vindy_layer.mask.detach().cpu().numpy()
+    
+    np.savez(f"{path_prefix}.npz",
+             xi_mean=xi_mean,
+             xi_log_scale=xi_log_scale,
+             mask=mask)
+    
+def load_vindy_weights_np(path: str):
+    """
+    Load weights from a NumPy archive.
+    Returns a dict with keys: xi_mean, xi_log_scale, mask
+    """
+    data = np.load(path)
+    return {k: data[k] for k in data}
+
 def add_lognormal_noise(trajectory: np.ndarray, sigma: float):
     noise = np.random.lognormal(mean=0, sigma=sigma, size=trajectory.shape)
     return trajectory * noise, noise

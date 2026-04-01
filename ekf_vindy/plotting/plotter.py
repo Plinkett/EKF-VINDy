@@ -131,13 +131,13 @@ def plot_trajectory(x: np.ndarray, time_instants: np.ndarray, sdevs: np.ndarray 
             lower = x[:, i] - 1.96 * sdevs[:, i]
             fill_color = to_rgba(colors[i], alpha=0.2)
             ax.fill_between(time_instants, lower, upper, color=fill_color)
-
+    
     # overlay reference trajectory if provided
-    if reference is not None:
+    if reference is not None:   
         ax.plot(
             time_instants, reference,
             color="red", linestyle="--", lw=2.5,
-            label="$\mu (t)$"
+            label="$\\mu (t)$"
         )
     
     # titles and labels
@@ -182,7 +182,9 @@ def plot_pdf(
     ylim: tuple | None = (0, 10),
     palette="muted",
     label_size="medium",
+    show_xticks_each: bool = False,
 ):
+
     """
     Plot PDFs in a grid:
     - Rows = batch labels (variables)
@@ -266,6 +268,14 @@ def plot_pdf(
             ax.tick_params(axis="both", labelsize=tick_fontsize)
             ax.grid(True, linestyle="-", linewidth=0.5, color="gray", alpha=0.5)
             ax.set_axisbelow(True)
+            
+            if show_xticks_each:
+                ax.tick_params(axis="x", labelbottom=True)
+            else:
+                # default: only bottom row
+                if b != B - 1:
+                    ax.tick_params(axis="x", labelbottom=False)
+
 
     fig.tight_layout()
     return fig, axes
